@@ -1,0 +1,24 @@
+{
+  "name": "worker",
+  "version": "1.0.0",
+  "description": "DAM background processing worker",
+  "main": "dist/worker.js",
+  "scripts": {
+    "dev": "ts-node-dev --respawn --transpile-only src/worker.ts",
+    "build": "tsc",
+    "start": "node dist/worker.js"
+  },
+  "type": "commonjs",
+  "dependencies": {
+    "amqplib": "^0.10.9",
+    "dotenv": "^18.0.6",
+    "minio": "^8.0.7",
+    "sharp": "^0.35.5"
+  },
+  "devDependencies": {
+    "@types/amqplib": "^0.10.7",
+    "@types/node": "^26.6.4",
+    "ts-node-dev": "^2.0.0",
+    "typescript": "^5.9.3"
+  }
+}
