@@ -1,8 +1,10 @@
+
 import {
   createAsset,
   getAllAssets,
   CreateAssetData,
   updateAssetMetadata,
+  getDashboardStats,
 } from "../repositories/assetRepository";
 
 export const createAssetService = async (data: CreateAssetData) => {
@@ -18,4 +20,8 @@ export const updateAssetMetadataService = async (
   metadata: object
 ) => {
   return await updateAssetMetadata(assetId, metadata);
+};
+
+export const getDashboardStatsService = async () => {
+  return await getDashboardStats();
 };

@@ -1,3 +1,4 @@
+
 services:
   rabbitmq:
     image: rabbitmq:4-management
@@ -25,6 +26,17 @@ services:
       - minio_test_data:/data
     command: server /data --console-address ":9001"
 
+  redis:
+    image: redis:7-alpine
+    container_name: dam-redis
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+
 volumes:
   rabbitmq_data:
   minio_test_data:
+  redis_data:

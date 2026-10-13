@@ -1,3 +1,4 @@
+
 import { Request, Response } from "express";
 import { saveFile } from "../services/storageService";
 import minioClient, { bucketName } from "../config/minio";
@@ -5,9 +6,9 @@ import {
   createAssetService,
   getAssetsService,
   updateAssetMetadataService,
+  getDashboardStatsService,
 } from "../services/assetService";
 import { publishAssetProcessingJob } from "../services/queueService";
-
 
 export const uploadAsset = async (req: Request, res: Response) => {
   try {
@@ -82,26 +83,29 @@ export const uploadAsset = async (req: Request, res: Response) => {
   }
 };
 
-
 export const getAssets = async (req: Request, res: Response) => {
   try {
     const assets = await getAssetsService();
 
-    res.json(assets);
+    return res.json(assets);
   } catch (error) {
     console.error("Get assets error:", error);
 
-    res.status(500).json({
+    return res.status(500).json({
       message: "Failed to fetch assets",
     });
   }
 };
-export const updateMetadata = async (req: Request, res: Response) => {
+
+export const updateMetadata = async (
+  req: Request,
+  res: Response
+) => {
   try {
     const assetId = Number(req.params.id);
     const { metadata } = req.body;
 
-    if (!assetId || !metadata) {
+    if (!Number.isInteger(assetId) || assetId <= 0 || !metadata) {
       return res.status(400).json({
         message: "Asset ID and metadata are required",
       });
@@ -118,15 +122,32 @@ export const updateMetadata = async (req: Request, res: Response) => {
       });
     }
 
-    res.json({
+    return res.json({
       message: "Metadata updated successfully",
       asset,
     });
   } catch (error) {
     console.error("Update metadata error:", error);
 
-    res.status(500).json({
+    return res.status(500).json({
       message: "Failed to update metadata",
+    });
+  }
+};
+
+export const getDashboardStats = async (
+  _req: Request,
+  res: Response
+) => {
+  try {
+    const stats = await getDashboardStatsService();
+
+    return res.json(stats);
+  } catch (error) {
+    console.error("Get dashboard stats error:", error);
+
+    return res.status(500).json({
+      message: "Failed to fetch dashboard statistics",
     });
   }
 };
