@@ -8,6 +8,7 @@ import {
   getAssets,
   updateMetadata,
   getDashboardStats,
+  deleteAsset,
 } from "../controllers/assetController";
 
 const router = Router();
@@ -23,6 +24,8 @@ router.get("/", getAssets);
 
 // Update asset metadata
 router.patch("/:id/metadata", updateMetadata);
+
+router.delete("/:id", deleteAsset);
 
 router.get("/:id/video", streamAssetVideo);
 

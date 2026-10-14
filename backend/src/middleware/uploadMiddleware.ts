@@ -1,3 +1,4 @@
+
 import multer from "multer";
 import path from "path";
 import fs from "fs";
@@ -14,7 +15,7 @@ const storage = multer.diskStorage({
   },
 
   filename: (_req, file, cb) => {
-    const extension = path.extname(file.originalname);
+    const extension = path.extname(file.originalname).toLowerCase();
     const uniqueName = `${Date.now()}-${Math.random()
       .toString(36)
       .substring(2)}${extension}`;
@@ -34,7 +35,6 @@ const allowedMimeTypes = [
 
 const upload = multer({
   storage,
-
   limits: {
     fileSize: 500 * 1024 * 1024,
   },
@@ -43,11 +43,12 @@ const upload = multer({
     if (allowedMimeTypes.includes(file.mimetype)) {
       cb(null, true);
     } else {
-      cb(
-        new Error(
-          `Unsupported file type: ${file.mimetype}`
-        )
+      const error = new Error(
+        `Unsupported file type: ${file.mimetype}. ` +
+          "Allowed formats: JPG, PNG, WEBP, MP4, MOV, and WEBM."
       );
+
+      cb(error);
     }
   },
 });

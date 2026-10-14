@@ -2,6 +2,7 @@
 import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
+import multer from "multer";
 import pool from "./config/db";
 import assetRoutes from "./routes/assetRoutes";
 import { connectRabbitMQ } from "./config/rabbitmq";
@@ -47,6 +48,55 @@ app.get("/health", async (_req, res) => {
 });
 
 app.use("/api/assets", assetRoutes);
+
+// Centralized error handling for uploads and API requests.
+// Keep this middleware after the routes.
+app.use(
+  (
+    error: Error,
+    _req: express.Request,
+    res: express.Response,
+    _next: express.NextFunction,
+  ) => {
+    if (error instanceof multer.MulterError) {
+      if (error.code === "LIMIT_FILE_SIZE") {
+        return res.status(413).json({
+          message: "File is too large. Maximum file size is 500 MB.",
+        });
+      }
+
+      if (
+        error.code === "LIMIT_FILE_COUNT" ||
+        error.code === "LIMIT_UNEXPECTED_FILE"
+      ) {
+        return res.status(400).json({
+          message:
+            "Invalid file selection. You can upload a maximum of 10 files at once.",
+        });
+      }
+
+      return res.status(400).json({
+        message: "Invalid file upload. Please check your selected files.",
+      });
+    }
+
+    if (
+      error.message.startsWith("Unsupported file type:")
+    ) {
+      return res.status(400).json({
+        message:
+          "Unsupported file type. Upload JPG, PNG, WEBP, MP4, MOV, or WEBM files.",
+      });
+    }
+
+    console.error("Unhandled API error:", error.message);
+
+    return res.status(500).json({
+      message:
+        "An unexpected server error occurred. Please try again later.",
+    });
+  },
+);
 
 const PORT = process.env.PORT || 3000;
 

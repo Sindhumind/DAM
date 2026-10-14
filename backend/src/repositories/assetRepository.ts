@@ -61,49 +61,59 @@ export const createAsset = async (data: CreateAssetData) => {
   return result.rows[0];
 };
 
-export const getAllAssets = async () => {
-  // Try Redis first.
-  try {
-    if (redisClient.isReady) {
-      const cachedAssets = await redisClient.get(
-        ASSET_LIST_CACHE_KEY
-      );
 
-      if (cachedAssets !== null) {
-        console.log("Asset list cache HIT");
-        return JSON.parse(cachedAssets);
-      }
-    }
-  } catch (error) {
-    console.error("Redis asset-list cache read failed:", error);
-  }
+export const getAllAssets = async (
+  page: number = 1,
+  limit: number = 8,
+  search: string = "",
+  filter: "all" | "image" | "video" = "all"
+) => {
+  const offset = (page - 1) * limit;
+  const searchTerm = `%${search.trim()}%`;
 
-  console.log("Asset list cache MISS");
-
-  // PostgreSQL remains the source of truth.
   const result = await pool.query(
     `
     SELECT *
     FROM assets
-    ORDER BY created_at DESC
-    `
+    WHERE
+      original_filename ILIKE $1
+      AND (
+        $2 = 'all'
+        OR ($2 = 'image' AND mime_type LIKE 'image/%')
+        OR ($2 = 'video' AND mime_type LIKE 'video/%')
+      )
+    ORDER BY created_at DESC, id DESC
+    LIMIT $3 OFFSET $4
+    `,
+    [searchTerm, filter, limit, offset]
   );
 
-  // Cache the result for 60 seconds.
-  try {
-    if (redisClient.isReady) {
-      await redisClient.set(
-        ASSET_LIST_CACHE_KEY,
-        JSON.stringify(result.rows),
-        { EX: ASSET_LIST_CACHE_TTL }
-      );
-    }
-  } catch (error) {
-    console.error("Redis asset-list cache write failed:", error);
-  }
+  const countResult = await pool.query(
+    `
+    SELECT COUNT(*)::int AS total
+    FROM assets
+    WHERE
+      original_filename ILIKE $1
+      AND (
+        $2 = 'all'
+        OR ($2 = 'image' AND mime_type LIKE 'image/%')
+        OR ($2 = 'video' AND mime_type LIKE 'video/%')
+      )
+    `,
+    [searchTerm, filter]
+  );
 
-  return result.rows;
+  const total = countResult.rows[0].total as number;
+
+  return {
+    assets: result.rows,
+    total,
+    page,
+    limit,
+    totalPages: Math.ceil(total / limit),
+  };
 };
+
 
 export const updateAssetMetadata = async (
   assetId: number,
@@ -178,3 +188,32 @@ export const getDashboardStats = async () => {
 
   return stats;
 };
+
+export const deleteAsset = async (assetId: number): Promise<boolean> => {
+  const result = await pool.query(
+    `
+    DELETE FROM assets
+    WHERE id = $1
+    RETURNING id
+    `,
+    [assetId]
+  );
+
+  if (result.rows.length > 0) {
+    await invalidateAssetListCache();
+    return true;
+  }
+
+  return false;
+};
+
+
+export const getAssetById = async (assetId: number) => {
+  const result = await pool.query(
+    `SELECT * FROM assets WHERE id = $1`,
+    [assetId]
+  );
+
+  return result.rows[0] ?? null;
+};
+

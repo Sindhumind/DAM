@@ -7,6 +7,7 @@ import {
   getAssetsService,
   updateAssetMetadataService,
   getDashboardStatsService,
+  deleteAssetService,
 } from "../services/assetService";
 import { publishAssetProcessingJob } from "../services/queueService";
 
@@ -83,11 +84,39 @@ export const uploadAsset = async (req: Request, res: Response) => {
   }
 };
 
+
 export const getAssets = async (req: Request, res: Response) => {
   try {
-    const assets = await getAssetsService();
+    const page = Math.max(
+      1,
+      Number.parseInt(req.query.page as string, 10) || 1
+    );
 
-    return res.json(assets);
+    const requestedLimit =
+      Number.parseInt(req.query.limit as string, 10) || 8;
+
+    const limit = Math.min(50, Math.max(1, requestedLimit));
+    const search =
+      typeof req.query.search === "string" ? req.query.search : "";
+
+    const allowedFilters = ["all", "image", "video"] as const;
+    const requestedFilter =
+      typeof req.query.filter === "string" ? req.query.filter : "all";
+
+    const filter = allowedFilters.includes(
+      requestedFilter as (typeof allowedFilters)[number]
+    )
+      ? (requestedFilter as (typeof allowedFilters)[number])
+      : "all";
+
+    const result = await getAssetsService(
+      page,
+      limit,
+      search,
+      filter
+    );
+
+    return res.json(result);
   } catch (error) {
     console.error("Get assets error:", error);
 
@@ -96,6 +125,7 @@ export const getAssets = async (req: Request, res: Response) => {
     });
   }
 };
+
 
 export const updateMetadata = async (
   req: Request,
@@ -148,6 +178,37 @@ export const getDashboardStats = async (
 
     return res.status(500).json({
       message: "Failed to fetch dashboard statistics",
+    });
+  }
+};
+
+
+export const deleteAsset = async (req: Request, res: Response) => {
+  try {
+    const assetId = Number(req.params.id);
+
+    if (!Number.isInteger(assetId) || assetId <= 0) {
+      return res.status(400).json({
+        message: "A valid asset ID is required",
+      });
+    }
+
+    const deleted = await deleteAssetService(assetId);
+
+    if (!deleted) {
+      return res.status(404).json({
+        message: "Asset not found",
+      });
+    }
+
+    return res.json({
+      message: "Asset deleted successfully",
+    });
+  } catch (error) {
+    console.error("Delete asset error:", error);
+
+    return res.status(500).json({
+      message: "Failed to delete asset",
     });
   }
 };
