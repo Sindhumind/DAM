@@ -11,26 +11,25 @@ import {
 } from "../services/assetService";
 import { publishAssetProcessingJob } from "../services/queueService";
 
-export const uploadAsset = async (req: Request, res: Response) => {
-  try {
-    const files = req.files as Express.Multer.File[];
 
-    if (!files || files.length === 0) {
+
+export const uploadAsset = async (req: Request, res: Response) => {
+  const files = (req.files as Express.Multer.File[] | undefined) ?? [];
+  const assets = [];
+
+  try {
+    if (files.length === 0) {
       return res.status(400).json({
         message: "No files uploaded",
       });
     }
 
-    const assets = [];
-
     for (const file of files) {
-      // Upload the original file to MinIO.
       const storageResult = await saveFile(file);
 
       let asset;
 
       try {
-        // Create the PostgreSQL record.
         asset = await createAssetService({
           originalFilename: file.originalname,
           storedFilename: storageResult.storedFilename,
@@ -39,28 +38,18 @@ export const uploadAsset = async (req: Request, res: Response) => {
           fileSize: file.size,
         });
       } catch (databaseError) {
-        // Roll back the MinIO upload if the database insert fails.
         try {
           await minioClient.removeObject(
             bucketName,
             storageResult.storageKey
           );
-
-          console.log(
-            "Removed MinIO object after database failure:",
-            storageResult.storageKey
-          );
         } catch (cleanupError) {
-          console.error(
-            "Failed to clean up MinIO object:",
-            cleanupError
-          );
+          console.error("Failed to clean up MinIO object:", cleanupError);
         }
 
         throw databaseError;
       }
 
-      // Publish the processing job after the record exists.
       await publishAssetProcessingJob({
         id: asset.id,
         storageKey: asset.storage_key,

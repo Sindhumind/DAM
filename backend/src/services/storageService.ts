@@ -26,9 +26,6 @@ export const saveFile = async (file: Express.Multer.File) => {
       etag: result.etag,
     });
 
-    // Delete the temporary local file after MinIO upload succeeds.
-    await fs.unlink(file.path);
-
     return {
       storedFilename: file.filename,
       storageKey,
@@ -38,5 +35,15 @@ export const saveFile = async (file: Express.Multer.File) => {
   } catch (error) {
     console.error("MinIO upload failed:", error);
     throw error;
+  } finally {
+    try {
+      await fs.unlink(file.path);
+    } catch (cleanupError) {
+      const errorCode = (cleanupError as NodeJS.ErrnoException).code;
+
+      if (errorCode !== "ENOENT") {
+        console.error("Temporary-file cleanup failed:", cleanupError);
+      }
+    }
   }
 };

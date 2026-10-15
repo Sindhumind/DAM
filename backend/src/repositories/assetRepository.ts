@@ -115,6 +115,7 @@ export const getAllAssets = async (
 };
 
 
+
 export const updateAssetMetadata = async (
   assetId: number,
   metadata: object
@@ -122,21 +123,21 @@ export const updateAssetMetadata = async (
   const result = await pool.query(
     `
     UPDATE assets
-    SET metadata = $1,
+    SET metadata = COALESCE(metadata, '{}'::jsonb) || $1::jsonb,
         updated_at = CURRENT_TIMESTAMP
     WHERE id = $2
     RETURNING *
     `,
-    [metadata, assetId]
+    [JSON.stringify(metadata), assetId]
   );
 
-  // Invalidate caches only if an asset was updated.
   if (result.rows.length > 0) {
     await invalidateAssetListCache();
   }
 
   return result.rows[0];
 };
+
 
 export const getDashboardStats = async () => {
   // Try Redis first.
