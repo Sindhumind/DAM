@@ -1,7 +1,8 @@
-import { Download, X } from "lucide-react";
+import { useCallback } from "react";
 import Modal from "../common/Modal";
-import Button from "../common/Button";
 import type { Asset } from "../../types/asset";
+import AssetPreviewMedia from "./AssetPreviewMedia";
+import AssetPreviewFooter from "./AssetPreviewFooter";
 
 interface AssetPreviewProps {
   asset: Asset | null;
@@ -18,37 +19,66 @@ export default function AssetPreview({
   isOpen,
   onClose,
 }: AssetPreviewProps) {
-  if (!asset) {
-    return null;
-  }
-
-  const isVideo = asset.mime_type?.toLowerCase().startsWith("video/");
+  const isVideo = asset?.mime_type?.toLowerCase().startsWith("video/") ?? false;
 
   const mediaUrl = isVideo ? videoUrl || previewUrl : previewUrl;
 
-  const handleDownload = async () => {
+  const handleDownload = useCallback(async () => {
+    if (!asset) return;
+
+    let objectUrl: string | null = null;
+
     try {
-      const response = await fetch(mediaUrl);
+      const response = await fetch(mediaUrl, {
+        credentials: "include",
+      });
 
       if (!response.ok) {
-        throw new Error("Download failed.");
+        throw new Error(
+          `Download failed: ${response.status} ${response.statusText}`,
+        );
       }
 
       const blob = await response.blob();
-      const objectUrl = URL.createObjectURL(blob);
-      const link = document.createElement("a");
 
+      if (blob.size === 0) {
+        throw new Error("The downloaded file is empty.");
+      }
+
+      objectUrl = URL.createObjectURL(blob);
+
+      const link = document.createElement("a");
       link.href = objectUrl;
       link.download = asset.original_filename;
+      link.style.display = "none";
+
       document.body.appendChild(link);
       link.click();
       link.remove();
 
-      URL.revokeObjectURL(objectUrl);
-    } catch {
-      window.open(mediaUrl, "_blank", "noopener,noreferrer");
+      window.setTimeout(() => {
+        if (objectUrl) {
+          URL.revokeObjectURL(objectUrl);
+        }
+      }, 1000);
+
+      objectUrl = null;
+    } catch (error) {
+      console.error("Asset download failed:", error);
+
+      alert(
+        error instanceof Error
+          ? error.message
+          : "Unable to download the asset. Please try again.",
+      );
+    } finally {
+      if (objectUrl) {
+        URL.revokeObjectURL(objectUrl);
+      }
     }
-  };
+  }, [asset, mediaUrl]);
+
+  if (!asset) return null;
 
   return (
     <Modal
@@ -58,57 +88,18 @@ export default function AssetPreview({
       size="xl"
     >
       <div className="flex max-h-[75vh] flex-col">
-        <div className="flex min-h-64 flex-1 items-center justify-center overflow-hidden rounded-lg bg-slate-950">
-          {isVideo ? (
-            <video
-              key={mediaUrl}
-              src={mediaUrl}
-              controls
-              autoPlay
-              className="max-h-[65vh] w-full object-contain"
-            >
-              Your browser does not support video playback.
-            </video>
-          ) : (
-            <img
-              src={mediaUrl}
-              alt={asset.original_filename}
-              className="max-h-[65vh] w-full object-contain"
-            />
-          )}
-        </div>
+        <AssetPreviewMedia
+          key={`${asset.id}-${mediaUrl}`}
+          isVideo={isVideo}
+          mediaUrl={mediaUrl}
+          filename={asset.original_filename}
+        />
 
-        <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-          <div className="min-w-0">
-            <p className="truncate text-sm font-medium text-slate-800">
-              {asset.original_filename}
-            </p>
-
-            <p className="mt-1 text-xs text-slate-500">
-              {asset.mime_type} · {asset.status}
-            </p>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <Button
-              type="button"
-              variant="secondary"
-              leftIcon={<Download size={16} />}
-              onClick={() => void handleDownload()}
-            >
-              Download
-            </Button>
-
-            <Button
-              type="button"
-              variant="ghost"
-              leftIcon={<X size={16} />}
-              onClick={onClose}
-            >
-              Close
-            </Button>
-          </div>
-        </div>
+        <AssetPreviewFooter
+          asset={asset}
+          onDownload={() => void handleDownload()}
+          onClose={onClose}
+        />
       </div>
     </Modal>
   );

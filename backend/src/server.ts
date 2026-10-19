@@ -1,10 +1,14 @@
-
 import express from "express";
 import cors from "cors";
+import cookieParser from "cookie-parser";
 import dotenv from "dotenv";
 import multer from "multer";
+
 import pool from "./config/db";
 import assetRoutes from "./routes/assetRoutes";
+import authRoutes from "./routes/authRoutes";
+import workerRoutes from "./routes/workerRoutes";
+
 import { connectRabbitMQ } from "./config/rabbitmq";
 import { redisClient } from "./config/redis";
 
@@ -12,9 +16,54 @@ dotenv.config();
 
 const app = express();
 
-app.use(cors());
-app.use(express.json());
+const frontendUrl =
+  process.env.FRONTEND_URL || "http://localhost:5173";
 
+const trustedOrigins = new Set([frontendUrl]);
+
+// CORS for the trusted frontend.
+app.use(
+  cors({
+    origin: frontendUrl,
+    credentials: true,
+  }),
+);
+
+app.use(express.json());
+app.use(cookieParser());
+
+// CSRF protection for browser state-changing requests.
+// Requests without an Origin header are rejected for these methods.
+// Configure trustedOrigins with every legitimate frontend origin.
+app.use((req, res, next) => {
+  const stateChangingMethods = new Set([
+    "POST",
+    "PUT",
+    "PATCH",
+    "DELETE",
+  ]);
+
+  if (!stateChangingMethods.has(req.method)) {
+    next();
+    return;
+  }
+
+  const origin = req.get("Origin");
+
+  if (!origin || !trustedOrigins.has(origin)) {
+    res.status(403).json({
+      message: "Request origin is not allowed.",
+    });
+    return;
+  }
+
+  next();
+});
+
+// Internal worker routes.
+app.use("/internal/worker/assets", workerRoutes);
+
+// Health check.
 app.get("/health", async (_req, res) => {
   let database = "disconnected";
   let redis = "disconnected";
@@ -47,10 +96,11 @@ app.get("/health", async (_req, res) => {
   });
 });
 
+// API routes.
 app.use("/api/assets", assetRoutes);
+app.use("/api/auth", authRoutes);
 
 // Centralized error handling for uploads and API requests.
-// Keep this middleware after the routes.
 app.use(
   (
     error: Error,
@@ -76,13 +126,12 @@ app.use(
       }
 
       return res.status(400).json({
-        message: "Invalid file upload. Please check your selected files.",
+        message:
+          "Invalid file upload. Please check your selected files.",
       });
     }
 
-    if (
-      error.message.startsWith("Unsupported file type:")
-    ) {
+    if (error.message.startsWith("Unsupported file type:")) {
       return res.status(400).json({
         message:
           "Unsupported file type. Upload JPG, PNG, WEBP, MP4, MOV, or WEBM files.",
@@ -100,18 +149,27 @@ app.use(
 
 const PORT = process.env.PORT || 3000;
 
+
 const startServer = async () => {
   try {
+    console.log("Connecting to Redis...");
     await redisClient.connect();
     console.log("Redis initialization complete");
 
+    console.log("Connecting to RabbitMQ...");
     await connectRabbitMQ();
+    console.log("RabbitMQ initialization complete");
 
     app.listen(PORT, () => {
       console.log(`DAM API running on port ${PORT}`);
     });
   } catch (error) {
     console.error("Failed to start server:", error);
+
+    if (error instanceof Error) {
+      console.error("Error message:", error.message);
+      console.error("Error stack:", error.stack);
+    }
 
     if (redisClient.isOpen) {
       await redisClient.quit().catch(() => {});

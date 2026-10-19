@@ -11,20 +11,41 @@ if (!RABBITMQ_URL) {
 }
 
 export const QUEUE_NAME = "asset-processing";
+export const RETRY_QUEUE_NAME = "asset-processing-retry";
+export const DEAD_LETTER_QUEUE_NAME = "asset-processing-dead";
+export const MAX_PROCESSING_ATTEMPTS = 3;
+export const RETRY_DELAY_MS = 10000;
 
 let connection: ChannelModel;
 let channel: ConfirmChannel;
 
 export const connectRabbitMQ = async (): Promise<ConfirmChannel> => {
   connection = await amqp.connect(RABBITMQ_URL);
-
   channel = await connection.createConfirmChannel();
 
+  // Main queue: failed jobs can be routed to the retry queue.
   await channel.assertQueue(QUEUE_NAME, {
     durable: true,
   });
 
+  // Retry queue: messages return to the main queue after a delay.
+  await channel.assertQueue(RETRY_QUEUE_NAME, {
+    durable: true,
+    arguments: {
+      "x-message-ttl": RETRY_DELAY_MS,
+      "x-dead-letter-exchange": "",
+      "x-dead-letter-routing-key": QUEUE_NAME,
+    },
+  });
+
+  // Terminal queue: jobs that exhaust retries are kept for inspection.
+  await channel.assertQueue(DEAD_LETTER_QUEUE_NAME, {
+    durable: true,
+  });
+
   console.log("RabbitMQ connected with publisher confirms");
+  console.log("Retry queue:", RETRY_QUEUE_NAME);
+  console.log("Dead-letter queue:", DEAD_LETTER_QUEUE_NAME);
 
   return channel;
 };

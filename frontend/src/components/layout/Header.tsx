@@ -1,4 +1,4 @@
-import { Bell, Search } from "lucide-react";
+import { Bell, Search, LogOut } from "lucide-react";
 import Input from "../common/Input";
 
 interface HeaderProps {
@@ -6,6 +6,9 @@ interface HeaderProps {
   subtitle?: string;
   searchValue?: string;
   onSearchChange?: (value: string) => void;
+  userEmail?: string;
+  userRole?: string;
+  onLogout?: () => void | Promise<void>;
 }
 
 export default function Header({
@@ -13,6 +16,9 @@ export default function Header({
   subtitle = "Manage your digital assets in one place",
   searchValue,
   onSearchChange,
+  userEmail,
+  userRole,
+  onLogout,
 }: HeaderProps) {
   return (
     <header className="border-b border-slate-200 bg-white px-4 py-4 sm:px-6">
@@ -24,7 +30,7 @@ export default function Header({
           <p className="mt-1 text-sm text-slate-500">{subtitle}</p>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           {onSearchChange && (
             <div className="relative w-full sm:w-64">
               <Search
@@ -33,7 +39,7 @@ export default function Header({
               />
               <Input
                 type="search"
-                aria-label="Search"
+                aria-label="Search assets"
                 placeholder="Search assets..."
                 value={searchValue ?? ""}
                 onChange={(event) => onSearchChange(event.target.value)}
@@ -45,10 +51,30 @@ export default function Header({
           <button
             type="button"
             aria-label="Notifications"
-            className="relative rounded-lg border border-slate-200 p-2.5 text-slate-600 transition hover:bg-slate-50"
+            className="rounded-lg border border-slate-200 p-2.5 text-slate-600 transition hover:bg-slate-50"
           >
             <Bell size={19} />
           </button>
+
+          {userEmail && (
+            <div className="hidden text-right sm:block">
+              <p className="text-sm font-medium text-slate-800">{userEmail}</p>
+              {userRole && (
+                <p className="text-xs capitalize text-slate-500">{userRole}</p>
+              )}
+            </div>
+          )}
+
+          {onLogout && (
+            <button
+              type="button"
+              onClick={() => void onLogout()}
+              className="flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2.5 text-sm font-medium text-slate-600 transition hover:bg-slate-50"
+            >
+              <LogOut size={17} />
+              <span>Logout</span>
+            </button>
+          )}
         </div>
       </div>
     </header>

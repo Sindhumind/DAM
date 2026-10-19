@@ -30,6 +30,7 @@ export default function useAssets(): UseAssetsResult {
   const [totalPages, setTotalPages] = useState(0);
   const [search, setSearchValue] = useState("");
   const [filter, setFilterValue] = useState<AssetFilter>("all");
+  const [reloadKey, setReloadKey] = useState(0);
 
   const setPage = useCallback((nextPage: number) => {
     setCurrentPage(Math.max(1, nextPage));
@@ -46,37 +47,19 @@ export default function useAssets(): UseAssetsResult {
   }, []);
 
   const refreshAssets = useCallback(async () => {
-    setLoading(true);
-    setError("");
-
-    try {
-      const result = await getAssets({
-        page,
-        limit: PAGE_SIZE,
-        search,
-        filter,
-      });
-
-      setAssets(result.assets);
-      setTotal(result.total);
-      setTotalPages(result.totalPages);
-    } catch (err) {
-      setError(
-        err instanceof Error ? err.message : "Unable to load assets."
-      );
-    } finally {
-      setLoading(false);
-    }
-  }, [page, search, filter]);
+    setReloadKey((key) => key + 1);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
 
-    const loadAssets = async () => {
+    async function loadAssets() {
       setLoading(true);
       setError("");
 
       try {
+        // getAssets sends credentials: "include".
+        // The browser supplies the HttpOnly cookie automatically.
         const result = await getAssets({
           page,
           limit: PAGE_SIZE,
@@ -92,7 +75,9 @@ export default function useAssets(): UseAssetsResult {
       } catch (err) {
         if (!cancelled) {
           setError(
-            err instanceof Error ? err.message : "Unable to load assets."
+            err instanceof Error
+              ? err.message
+              : "Unable to load assets.",
           );
         }
       } finally {
@@ -100,14 +85,14 @@ export default function useAssets(): UseAssetsResult {
           setLoading(false);
         }
       }
-    };
+    }
 
     void loadAssets();
 
     return () => {
       cancelled = true;
     };
-  }, [page, search, filter]);
+  }, [page, search, filter, reloadKey]);
 
   return {
     assets,

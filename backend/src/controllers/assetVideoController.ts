@@ -1,19 +1,26 @@
 
-import type { Request, Response, NextFunction } from "express";
+import type { Response, NextFunction } from "express";
 import pool from "../config/db";
-import minioClient from "../config/minio";
-const bucketName = "dam-assets";
+import minioClient, { bucketName } from "../config/minio";
+import type { AuthenticatedRequest } from "../middleware/authMiddleware";
 
 export async function streamAssetVideo(
-  req: Request,
+  req: AuthenticatedRequest,
   res: Response,
   next: NextFunction
-) {
+): Promise<void> {
   try {
     const id = Number(req.params.id);
 
-    if (!Number.isInteger(id) || id <= 0) {
+    if (!Number.isSafeInteger(id) || id <= 0) {
       res.status(400).json({ message: "Invalid asset ID" });
+      return;
+    }
+
+    // This route requires authentication, but all authenticated
+    // users can stream any asset.
+    if (!req.user) {
+      res.status(401).json({ message: "Authentication required" });
       return;
     }
 
@@ -36,6 +43,11 @@ export async function streamAssetVideo(
       return;
     }
 
+    if (!asset.storage_key) {
+      res.status(404).json({ message: "Video file not found" });
+      return;
+    }
+
     const objectName = asset.storage_key;
 
     const stat = await minioClient.statObject(
@@ -49,7 +61,7 @@ export async function streamAssetVideo(
     res.setHeader("Content-Type", asset.mime_type);
     res.setHeader("Accept-Ranges", "bytes");
     res.setHeader("X-Content-Type-Options", "nosniff");
-    res.setHeader("Cache-Control", "private, max-age=300");
+    res.setHeader("Cache-Control", "private, no-store");
 
     if (range) {
       const match = /^bytes=(\d*)-(\d*)$/.exec(range);
@@ -69,7 +81,10 @@ export async function streamAssetVideo(
       if (!match[1]) {
         const suffixLength = Number(match[2]);
 
-        if (suffixLength <= 0) {
+        if (
+          !Number.isSafeInteger(suffixLength) ||
+          suffixLength <= 0
+        ) {
           res.status(416).setHeader(
             "Content-Range",
             `bytes */${fileSize}`
@@ -86,6 +101,8 @@ export async function streamAssetVideo(
       }
 
       if (
+        !Number.isSafeInteger(start) ||
+        !Number.isSafeInteger(end) ||
         start >= fileSize ||
         end < start ||
         start < 0

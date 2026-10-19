@@ -8,6 +8,8 @@ interface AssetGridProps {
   getPreviewUrl: (asset: Asset) => string;
   onPlayVideo: (asset: Asset) => void;
   onDelete: (asset: Asset) => void;
+  onEdit: (asset: Asset) => void;
+  canManageAsset: (asset: Asset) => boolean;
 }
 
 export default function AssetGrid({
@@ -15,6 +17,8 @@ export default function AssetGrid({
   getPreviewUrl,
   onPlayVideo,
   onDelete,
+  onEdit,
+  canManageAsset,
 }: AssetGridProps) {
   if (assets.length === 0) {
     return (
@@ -36,6 +40,8 @@ export default function AssetGrid({
           previewUrl={getPreviewUrl(asset)}
           onPlayVideo={onPlayVideo}
           onDelete={onDelete}
+          onEdit={onEdit}
+          canManage={canManageAsset(asset)}
           formatFileSize={formatFileSize}
           formatDate={formatDate}
         />

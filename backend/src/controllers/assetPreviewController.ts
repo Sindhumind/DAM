@@ -1,37 +1,37 @@
 
-import { Request, Response } from "express";
-import pool from "../config/db";
+import type { Response } from "express";
+import { getAssetById } from "../repositories/assetRepository";
+import type { AuthenticatedRequest } from "../middleware/authMiddleware";
 import minioClient, { bucketName } from "../config/minio";
 
 export const getAssetPreview = async (
-  req: Request,
+  req: AuthenticatedRequest,
   res: Response
 ) => {
   try {
     const assetId = Number(req.params.id);
 
-    if (!Number.isInteger(assetId) || assetId <= 0) {
+    if (!Number.isSafeInteger(assetId) || assetId <= 0) {
       return res.status(400).json({
         message: "Invalid asset ID",
       });
     }
 
-    const result = await pool.query(
-      `
-      SELECT storage_key, mime_type, metadata
-      FROM assets
-      WHERE id = $1
-      `,
-      [assetId]
-    );
+    if (!req.user) {
+      return res.status(401).json({
+        message: "Authentication required",
+      });
+    }
 
-    if (result.rows.length === 0) {
+    // All authenticated users can preview any asset.
+    const asset = await getAssetById(assetId);
+
+    if (!asset) {
       return res.status(404).json({
         message: "Asset not found",
       });
     }
 
-    const asset = result.rows[0];
     const thumbnailKey = asset.metadata?.thumbnailKey;
 
     const objectKey =
@@ -39,10 +39,16 @@ export const getAssetPreview = async (
         ? thumbnailKey
         : asset.storage_key;
 
+    if (!objectKey) {
+      return res.status(404).json({
+        message: "Preview not found",
+      });
+    }
+
     const contentType =
-      objectKey === thumbnailKey
+      typeof thumbnailKey === "string" && thumbnailKey.length > 0
         ? "image/jpeg"
-        : asset.mime_type;
+        : asset.mime_type || "application/octet-stream";
 
     const stream = await minioClient.getObject(
       bucketName,
@@ -50,7 +56,7 @@ export const getAssetPreview = async (
     );
 
     res.setHeader("Content-Type", contentType);
-    res.setHeader("Cache-Control", "private, max-age=300");
+    res.setHeader("Cache-Control", "private, no-store");
     res.setHeader("X-Content-Type-Options", "nosniff");
 
     stream.on("error", (error) => {
@@ -70,8 +76,8 @@ export const getAssetPreview = async (
     console.error("Get asset preview error:", error);
 
     if (!res.headersSent) {
-      return res.status(404).json({
-        message: "Preview not found",
+      res.status(500).json({
+        message: "Failed to retrieve asset preview",
       });
     }
   }

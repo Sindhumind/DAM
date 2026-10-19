@@ -1,8 +1,9 @@
-
 import type { Asset, AssetStats } from "../types/asset";
-
-const API_BASE_URL =
-  import.meta.env.VITE_API_BASE_URL || "http://localhost:3000";
+import {
+  API_BASE_URL,
+  REQUEST_OPTIONS,
+  handleResponse,
+} from "./apiResponse";
 
 export interface PaginatedAssets {
   assets: Asset[];
@@ -21,37 +22,6 @@ export interface GetAssetsParams {
   filter?: AssetTypeFilter;
 }
 
-async function handleResponse<T>(response: Response): Promise<T> {
-  if (!response.ok) {
-    let message = `Request failed (${response.status}).`;
-
-    try {
-      const contentType = response.headers.get("content-type") || "";
-
-      if (contentType.includes("application/json")) {
-        const result = await response.json();
-        message = result.message || message;
-      }
-    } catch {
-      // Keep the default error message.
-    }
-
-    throw new Error(message);
-  }
-
-  if (response.status === 204) {
-    return undefined as T;
-  }
-
-  const contentType = response.headers.get("content-type") || "";
-
-  if (!contentType.includes("application/json")) {
-    throw new Error("The server returned an unexpected response.");
-  }
-
-  return (await response.json()) as T;
-}
-
 export async function getAssets({
   page = 1,
   limit = 8,
@@ -66,7 +36,8 @@ export async function getAssets({
   });
 
   const response = await fetch(
-    `${API_BASE_URL}/api/assets?${params.toString()}`
+    `${API_BASE_URL}/api/assets?${params.toString()}`,
+    REQUEST_OPTIONS,
   );
 
   const data = await handleResponse<PaginatedAssets>(response);
@@ -77,26 +48,50 @@ export async function getAssets({
     typeof data.total !== "number" ||
     typeof data.totalPages !== "number"
   ) {
-    throw new Error("The server returned an invalid assets response.");
+    throw new Error(
+      "The server returned an invalid assets response.",
+    );
   }
 
   return data;
 }
 
-export async function uploadAsset(file: File): Promise<unknown> {
+export interface UploadAssetMetadata {
+  title: string;
+  description: string;
+  category: string;
+  tags: string[];
+}
+
+export async function uploadAsset(
+  file: File,
+  metadata?: UploadAssetMetadata,
+): Promise<unknown> {
   const formData = new FormData();
   formData.append("files", file);
 
-  const response = await fetch(`${API_BASE_URL}/api/assets/upload`, {
-    method: "POST",
-    body: formData,
-  });
+  if (metadata) {
+    formData.append("metadata", JSON.stringify(metadata));
+  }
+
+  const response = await fetch(
+    `${API_BASE_URL}/api/assets/upload`,
+    {
+      method: "POST",
+      ...REQUEST_OPTIONS,
+      body: formData,
+    },
+  );
 
   return handleResponse<unknown>(response);
 }
 
 export async function getAssetStats(): Promise<AssetStats> {
-  const response = await fetch(`${API_BASE_URL}/api/assets/stats`);
+  const response = await fetch(
+    `${API_BASE_URL}/api/assets/stats`,
+    REQUEST_OPTIONS,
+  );
+
   return handleResponse<AssetStats>(response);
 }
 
@@ -109,9 +104,43 @@ export function getAssetVideoUrl(assetId: number): string {
 }
 
 export async function deleteAsset(assetId: number): Promise<void> {
-  const response = await fetch(`${API_BASE_URL}/api/assets/${assetId}`, {
-    method: "DELETE",
-  });
+  const response = await fetch(
+    `${API_BASE_URL}/api/assets/${assetId}`,
+    {
+      method: "DELETE",
+      ...REQUEST_OPTIONS,
+    },
+  );
 
   await handleResponse<{ message: string }>(response);
+}
+
+export async function updateAssetMetadata(
+  assetId: number,
+  metadata: Record<string, unknown>,
+): Promise<Asset> {
+  const response = await fetch(
+    `${API_BASE_URL}/api/assets/${assetId}/metadata`,
+    {
+      method: "PATCH",
+      ...REQUEST_OPTIONS,
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(metadata),
+    },
+  );
+
+  const data = await handleResponse<{
+    message: string;
+    asset: Asset;
+  }>(response);
+
+  if (!data?.asset) {
+    throw new Error(
+      "The server returned an invalid metadata response.",
+    );
+  }
+
+  return data.asset;
 }

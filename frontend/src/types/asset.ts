@@ -6,6 +6,7 @@ export interface Asset {
   storage_key: string;
   status: string;
   created_at: string;
+  uploaded_by?: number | null;
   metadata?: {
     thumbnailKey?: string;
     width?: number;
