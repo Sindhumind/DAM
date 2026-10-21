@@ -1,3 +1,4 @@
+
 import express from "express";
 import cors from "cors";
 import cookieParser from "cookie-parser";
@@ -32,9 +33,13 @@ app.use(
 app.use(express.json());
 app.use(cookieParser());
 
+// Internal worker routes.
+// Every route requires authenticateWorker.
+// Register these before the browser-origin CSRF middleware.
+app.use("/internal/worker/assets", workerRoutes);
+
 // CSRF protection for browser state-changing requests.
-// Requests without an Origin header are rejected for these methods.
-// Configure trustedOrigins with every legitimate frontend origin.
+// Browser requests must include an allowed Origin header.
 app.use((req, res, next) => {
   const stateChangingMethods = new Set([
     "POST",
@@ -59,9 +64,6 @@ app.use((req, res, next) => {
 
   next();
 });
-
-// Internal worker routes.
-app.use("/internal/worker/assets", workerRoutes);
 
 // Health check.
 app.get("/health", async (_req, res) => {
@@ -148,7 +150,6 @@ app.use(
 );
 
 const PORT = process.env.PORT || 3000;
-
 
 const startServer = async () => {
   try {

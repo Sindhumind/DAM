@@ -36,6 +36,55 @@ services:
       - redis_data:/data
     command: redis-server --appendonly yes
 
+  backend:
+    image: dam-backend:local
+    container_name: dam-backend
+    restart: unless-stopped
+    env_file:
+      - ./backend/.env
+    environment:
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_NAME: dam
+      DB_USER: postgres
+      RABBITMQ_URL: amqp://${RABBITMQ_DEFAULT_USER}:${RABBITMQ_DEFAULT_PASS}@rabbitmq:5672
+      REDIS_URL: redis://redis:6379
+      MINIO_ENDPOINT: minio
+      MINIO_PORT: "9000"
+      FRONTEND_URL: http://localhost:8080
+      PORT: "3000"
+    ports:
+      - "127.0.0.1:3000:3000"
+    depends_on:
+      - rabbitmq
+      - minio
+      - redis
+
+      
+  worker:
+    image: dam-worker:local
+    container_name: dam-worker
+    restart: unless-stopped
+    env_file:
+      - ./backend/.env
+    environment:
+      RABBITMQ_URL: amqp://${RABBITMQ_DEFAULT_USER}:${RABBITMQ_DEFAULT_PASS}@rabbitmq:5672
+      BACKEND_URL: http://backend:3000
+      MINIO_ENDPOINT: minio
+      MINIO_PORT: "9000"
+    depends_on:
+      - rabbitmq
+      - minio
+      - backend
+
+  frontend:
+    image: dam-frontend:local
+    container_name: dam-frontend
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8080:80"
+    depends_on:
+      - backend
 volumes:
   rabbitmq_data:
   minio_test_data:

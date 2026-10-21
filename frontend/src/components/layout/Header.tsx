@@ -1,4 +1,4 @@
-import { Bell, Search, LogOut } from "lucide-react";
+import { Search, LogOut } from "lucide-react";
 import Input from "../common/Input";
 
 interface HeaderProps {
@@ -47,14 +47,6 @@ export default function Header({
               />
             </div>
           )}
-
-          <button
-            type="button"
-            aria-label="Notifications"
-            className="rounded-lg border border-slate-200 p-2.5 text-slate-600 transition hover:bg-slate-50"
-          >
-            <Bell size={19} />
-          </button>
 
           {userEmail && (
             <div className="hidden text-right sm:block">
