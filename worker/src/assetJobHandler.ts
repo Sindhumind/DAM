@@ -1,3 +1,4 @@
+
 import type {
   ConfirmChannel,
   ConsumeMessage,
@@ -11,6 +12,7 @@ import {
 import {
   updateAssetStatus,
   claimAssetForProcessing,
+  renewAssetProcessingLease,
 } from "./services/metadataService";
 
 import {
@@ -21,6 +23,56 @@ import {
   publishConfirmed,
   publishRawConfirmed,
 } from "./workerConfig";
+
+const HEARTBEAT_INTERVAL_MS = 5 * 60 * 1000;
+
+async function processWithHeartbeat(
+  job: AssetJob,
+  leaseToken: string,
+): Promise<void> {
+  let heartbeatFailure: unknown;
+  let heartbeatTask: Promise<void> | undefined;
+
+  const heartbeatTimer = setInterval(() => {
+    if (heartbeatTask || heartbeatFailure) return;
+
+    heartbeatTask = renewAssetProcessingLease(
+      job.assetId,
+      leaseToken,
+    )
+      .then((renewed) => {
+        if (!renewed) {
+          throw new Error(
+            `Lease renewal rejected for asset ${job.assetId}`,
+          );
+        }
+      })
+      .catch((error: unknown) => {
+        heartbeatFailure = error;
+      })
+      .finally(() => {
+        heartbeatTask = undefined;
+      });
+  }, HEARTBEAT_INTERVAL_MS);
+
+  try {
+    await processAsset(job, leaseToken);
+
+    if (heartbeatTask) {
+      await heartbeatTask;
+    }
+
+    if (heartbeatFailure) {
+      throw heartbeatFailure;
+    }
+  } finally {
+    clearInterval(heartbeatTimer);
+
+    if (heartbeatTask) {
+      await heartbeatTask;
+    }
+  }
+}
 
 export async function handleMessage(
   channel: ConfirmChannel,
@@ -62,10 +114,12 @@ export async function handleMessage(
     return;
   }
 
-  try {
-    const claimed = await claimAssetForProcessing(job.assetId);
+  let leaseToken: string | undefined;
 
-    if (!claimed) {
+  try {
+    const claim = await claimAssetForProcessing(job.assetId);
+
+    if (!claim.claimed) {
       console.log(
         `Skipping duplicate or ineligible job for asset ${job.assetId}`,
       );
@@ -74,10 +128,23 @@ export async function handleMessage(
       return;
     }
 
+    if (!claim.leaseToken) {
+      throw new Error(
+        `Asset ${job.assetId} was claimed without a lease token`,
+      );
+    }
+
+    leaseToken = claim.leaseToken;
+
     console.log(`Processing asset ${job.assetId}`);
 
-    await processAsset(job);
-    await updateAssetStatus(job.assetId, "COMPLETED");
+    await processWithHeartbeat(job, leaseToken);
+
+    await updateAssetStatus(
+      job.assetId,
+      "COMPLETED",
+      leaseToken,
+    );
 
     channel.ack(message);
 
@@ -90,9 +157,16 @@ export async function handleMessage(
       : 0;
 
     try {
+      if (!leaseToken) {
+        throw error;
+      }
+
       if (attempts + 1 < MAX_ATTEMPTS) {
-        // Release the claim so a retry can claim the asset again.
-        await updateAssetStatus(job.assetId, "UPLOADED");
+        await updateAssetStatus(
+          job.assetId,
+          "UPLOADED",
+          leaseToken,
+        );
 
         await publishConfirmed(channel, RETRY_QUEUE, {
           ...job,
@@ -103,7 +177,11 @@ export async function handleMessage(
           `Asset ${job.assetId} scheduled for retry ${attempts + 1}`,
         );
       } else {
-        await updateAssetStatus(job.assetId, "FAILED");
+        await updateAssetStatus(
+          job.assetId,
+          "FAILED",
+          leaseToken,
+        );
 
         await publishConfirmed(channel, DEAD_QUEUE, {
           ...job,
@@ -122,7 +200,6 @@ export async function handleMessage(
         publishError,
       );
 
-      // Closing the channel lets RabbitMQ redeliver the original message.
       try {
         await channel.close();
       } catch {

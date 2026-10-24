@@ -5,6 +5,7 @@ import {
   saveWorkerMetadata,
   updateWorkerAssetStatus,
   claimWorkerAsset,
+  renewWorkerAssetLease,
 } from "../controllers/workerController";
 
 const router = Router();
@@ -15,5 +16,6 @@ router.use(authenticateWorker);
 router.patch("/:id/metadata", saveWorkerMetadata);
 router.patch("/:id/status", updateWorkerAssetStatus);
 router.post("/:id/claim", claimWorkerAsset);
+router.patch("/:id/heartbeat", renewWorkerAssetLease);
 
 export default router;

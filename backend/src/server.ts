@@ -1,28 +1,28 @@
-
 import express from "express";
 import cors from "cors";
 import cookieParser from "cookie-parser";
 import dotenv from "dotenv";
 import multer from "multer";
+import type { Server } from "http";
+import helmet from "helmet";
 
 import pool from "./config/db";
 import assetRoutes from "./routes/assetRoutes";
 import authRoutes from "./routes/authRoutes";
 import workerRoutes from "./routes/workerRoutes";
 
-import { connectRabbitMQ } from "./config/rabbitmq";
+import { connectRabbitMQ, closeRabbitMQ } from "./config/rabbitmq";
 import { redisClient } from "./config/redis";
 
 dotenv.config();
 
 const app = express();
-
+app.use(helmet());
 const frontendUrl =
   process.env.FRONTEND_URL || "http://localhost:5173";
 
 const trustedOrigins = new Set([frontendUrl]);
 
-// CORS for the trusted frontend.
 app.use(
   cors({
     origin: frontendUrl,
@@ -30,16 +30,13 @@ app.use(
   }),
 );
 
-app.use(express.json());
+app.use(express.json({ limit: "1mb" }));
 app.use(cookieParser());
 
 // Internal worker routes.
-// Every route requires authenticateWorker.
-// Register these before the browser-origin CSRF middleware.
 app.use("/internal/worker/assets", workerRoutes);
 
 // CSRF protection for browser state-changing requests.
-// Browser requests must include an allowed Origin header.
 app.use((req, res, next) => {
   const stateChangingMethods = new Set([
     "POST",
@@ -49,17 +46,15 @@ app.use((req, res, next) => {
   ]);
 
   if (!stateChangingMethods.has(req.method)) {
-    next();
-    return;
+    return next();
   }
 
   const origin = req.get("Origin");
 
   if (!origin || !trustedOrigins.has(origin)) {
-    res.status(403).json({
+    return res.status(403).json({
       message: "Request origin is not allowed.",
     });
-    return;
   }
 
   next();
@@ -102,7 +97,7 @@ app.get("/health", async (_req, res) => {
 app.use("/api/assets", assetRoutes);
 app.use("/api/auth", authRoutes);
 
-// Centralized error handling for uploads and API requests.
+// Centralized error handling.
 app.use(
   (
     error: Error,
@@ -113,7 +108,8 @@ app.use(
     if (error instanceof multer.MulterError) {
       if (error.code === "LIMIT_FILE_SIZE") {
         return res.status(413).json({
-          message: "File is too large. Maximum file size is 500 MB.",
+          message:
+            "File is too large. Maximum file size is 500 MB.",
         });
       }
 
@@ -128,8 +124,7 @@ app.use(
       }
 
       return res.status(400).json({
-        message:
-          "Invalid file upload. Please check your selected files.",
+        message: "Invalid file upload. Please check your selected files.",
       });
     }
 
@@ -151,33 +146,86 @@ app.use(
 
 const PORT = process.env.PORT || 3000;
 
-const startServer = async () => {
+let httpServer: Server | undefined;
+let isShuttingDown = false;
+
+const shutdown = async (
+  reason: string,
+  exitCode = 0,
+): Promise<void> => {
+  if (isShuttingDown) return;
+  isShuttingDown = true;
+
+  console.log(`Shutting down (${reason})...`);
+
+  const forceExit = setTimeout(() => {
+    console.error("Graceful shutdown timed out.");
+    process.exit(1);
+  }, 10_000);
+
+  forceExit.unref();
+
   try {
-    console.log("Connecting to Redis...");
-    await redisClient.connect();
-    console.log("Redis initialization complete");
-
-    console.log("Connecting to RabbitMQ...");
-    await connectRabbitMQ();
-    console.log("RabbitMQ initialization complete");
-
-    app.listen(PORT, () => {
-      console.log(`DAM API running on port ${PORT}`);
-    });
-  } catch (error) {
-    console.error("Failed to start server:", error);
-
-    if (error instanceof Error) {
-      console.error("Error message:", error.message);
-      console.error("Error stack:", error.stack);
+    if (httpServer) {
+      await new Promise<void>((resolve, reject) => {
+        httpServer!.close((error) => {
+          if (error) reject(error);
+          else resolve();
+        });
+      });
     }
+
+    await closeRabbitMQ();
 
     if (redisClient.isOpen) {
-      await redisClient.quit().catch(() => {});
+      await redisClient.quit();
     }
 
-    process.exit(1);
+    await pool.end();
+  } catch (error) {
+    console.error("Error during shutdown:", error);
+    exitCode = 1;
+  } finally {
+    clearTimeout(forceExit);
+    process.exit(exitCode);
   }
 };
 
-startServer();
+const startServer = async (): Promise<void> => {
+  try {
+    console.log("Connecting to Redis...");
+
+    if (!redisClient.isOpen) {
+      await redisClient.connect();
+    }
+
+    console.log("Redis initialization complete");
+    console.log("Connecting to RabbitMQ...");
+
+    await connectRabbitMQ();
+
+    console.log("RabbitMQ initialization complete");
+
+    httpServer = app.listen(PORT, () => {
+      console.log(`DAM API running on port ${PORT}`);
+    });
+
+    httpServer.on("error", (error) => {
+      console.error("HTTP server error:", error);
+      void shutdown("HTTP server error", 1);
+    });
+  } catch (error) {
+    console.error("Failed to start server:", error);
+    await shutdown("startup failure", 1);
+  }
+};
+
+process.on("SIGTERM", () => {
+  void shutdown("SIGTERM");
+});
+
+process.on("SIGINT", () => {
+  void shutdown("SIGINT");
+});
+
+void startServer();

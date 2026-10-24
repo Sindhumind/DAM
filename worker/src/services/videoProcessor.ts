@@ -2,11 +2,14 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import path from "node:path";
-import { promises as fs } from "node:fs";
 import { pipeline } from "node:stream/promises";
+import { createWriteStream } from "node:fs";
 import { minioClient, bucketName } from "../minio";
 import { saveMetadata } from "./metadataService";
-import { createTempFilePath, removeTempFile } from "../utils/tempFileUtils";
+import {
+  createTempFilePath,
+  removeTempFile,
+} from "../utils/tempFileUtils";
 import type { AssetJob } from "./assetProcessor";
 
 const execFileAsync = promisify(execFile);
@@ -26,7 +29,10 @@ interface ProbeResult {
   }>;
 }
 
-export async function processVideo(job: AssetJob): Promise<void> {
+export async function processVideo(
+  job: AssetJob,
+  leaseToken: string,
+): Promise<void> {
   const originalPath = createTempFilePath(
     path.extname(job.storageKey) || ".video"
   );
@@ -40,7 +46,7 @@ export async function processVideo(job: AssetJob): Promise<void> {
 
     await pipeline(
       stream,
-      (await import("node:fs")).createWriteStream(originalPath)
+      createWriteStream(originalPath)
     );
 
     const { stdout } = await execFileAsync(
@@ -61,7 +67,9 @@ export async function processVideo(job: AssetJob): Promise<void> {
     );
 
     if (!videoStream) {
-      throw new Error(`No video stream found for asset ${job.assetId}`);
+      throw new Error(
+        `No video stream found for asset ${job.assetId}`
+      );
     }
 
     await execFileAsync(
@@ -86,15 +94,19 @@ export async function processVideo(job: AssetJob): Promise<void> {
       { "Content-Type": "image/jpeg" }
     );
 
-    await saveMetadata(job.assetId, {
-      width: videoStream.width ?? null,
-      height: videoStream.height ?? null,
-      videoCodec: videoStream.codec_name ?? null,
-      duration: Number(probe.format?.duration ?? 0),
-      format: probe.format?.format_name ?? null,
-      thumbnailKey,
-      processed: true,
-    });
+    await saveMetadata(
+      job.assetId,
+      {
+        width: videoStream.width ?? null,
+        height: videoStream.height ?? null,
+        videoCodec: videoStream.codec_name ?? null,
+        duration: Number(probe.format?.duration ?? 0),
+        format: probe.format?.format_name ?? null,
+        thumbnailKey,
+        processed: true,
+      },
+      leaseToken,
+    );
 
     console.log(`Video asset ${job.assetId} processed`);
   } finally {

@@ -37,3 +37,6 @@ Thumbs.db
 # Cache and test files
 .cache/
 .nyc_output/
+
+# Back up files
+*.backup

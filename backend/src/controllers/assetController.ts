@@ -1,88 +1,60 @@
 import type { Request, Response } from "express";
 import {
-  updateAssetStatusService,
-  claimAssetForProcessingService,
+  retryFailedAssetService,
+  restoreFailedAssetAfterRetryErrorService,
 } from "../services/assetService";
+import { publishAssetProcessingJob } from "../services/queueService";
 
-const allowedStatuses = [
-  "UPLOADED",
-  "PROCESSING",
-  "COMPLETED",
-  "FAILED",
-] as const;
-
-export const updateStatus = async (
+export const retryFailedAsset = async (
   req: Request,
   res: Response,
 ) => {
-  try {
-    const assetId = Number(req.params.id);
-    const { status } = req.body ?? {};
-
-    if (!Number.isInteger(assetId) || assetId <= 0) {
-      return res.status(400).json({
-        message: "A valid asset ID is required",
-      });
-    }
-
-    if (
-      typeof status !== "string" ||
-      !allowedStatuses.includes(
-        status as (typeof allowedStatuses)[number],
-      )
-    ) {
-      return res.status(400).json({
-        message: "A valid asset status is required",
-      });
-    }
-
-    const asset = await updateAssetStatusService(
-      assetId,
-      status as (typeof allowedStatuses)[number],
-    );
-
-    if (!asset) {
-      return res.status(404).json({
-        message: "Asset not found",
-      });
-    }
-
-    return res.json({
-      message: "Asset status updated successfully",
-      asset,
-    });
-  } catch (error) {
-    console.error("Update asset status error:", error);
-
-    return res.status(500).json({
-      message: "Failed to update asset status",
-    });
-  }
-};
-
-export const claimForProcessing = async (
-  req: Request,
-  res: Response,
-): Promise<void> => {
   const assetId = Number(req.params.id);
 
-  if (!Number.isInteger(assetId) || assetId <= 0) {
-    res.status(400).json({
+  if (!Number.isSafeInteger(assetId) || assetId <= 0) {
+    return res.status(400).json({
       message: "A valid asset ID is required",
     });
-    return;
   }
 
+  let asset: Awaited<
+    ReturnType<typeof retryFailedAssetService>
+  > = null;
+
   try {
-    const claimed =
-      await claimAssetForProcessingService(assetId);
+    asset = await retryFailedAssetService(assetId);
 
-    res.status(200).json({ claimed });
+    if (!asset) {
+      return res.status(409).json({
+        message: "Asset not found or is not in FAILED status",
+      });
+    }
+
+    await publishAssetProcessingJob({
+      id: asset.id,
+      storageKey: asset.storage_key,
+      mimeType: asset.mime_type,
+    });
+
+    return res.status(202).json({
+      message: "Asset retry queued successfully",
+    });
   } catch (error) {
-    console.error("Failed to claim asset:", error);
+    console.error("Failed to retry asset:", error);
 
-    res.status(500).json({
-      message: "Failed to claim asset",
+    if (asset) {
+      try {
+        await restoreFailedAssetAfterRetryErrorService(assetId);
+      } catch (restoreError) {
+        console.error(
+          "Failed to restore asset status after queue error:",
+          restoreError,
+        );
+      }
+    }
+
+    return res.status(500).json({
+      message: "Failed to queue asset retry",
     });
   }
 };

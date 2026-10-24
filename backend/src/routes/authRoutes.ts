@@ -5,6 +5,7 @@ import {
   getCurrentSession,
 } from "../controllers/authController";
 import { createUserAccount } from "../controllers/userController";
+import { loginRateLimit } from "../middleware/loginRateLimit";
 import {
   authenticateToken,
   requireAdmin,
@@ -12,7 +13,7 @@ import {
 
 const router = Router();
 
-router.post("/login", login);
+router.post("/login", loginRateLimit, login);
 router.post("/logout", logout);
 
 // Verify the HttpOnly cookie and return the authenticated user.

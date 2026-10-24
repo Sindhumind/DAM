@@ -9,7 +9,10 @@ export interface AssetJob {
   attempts?: number;
 }
 
-export async function processAsset(job: AssetJob): Promise<void> {
+export async function processAsset(
+  job: AssetJob,
+  leaseToken: string,
+): Promise<void> {
   if (!Number.isInteger(job.assetId) || job.assetId <= 0) {
     throw new Error("Invalid assetId");
   }
@@ -21,17 +24,24 @@ export async function processAsset(job: AssetJob): Promise<void> {
     throw new Error("Invalid storageKey");
   }
 
-  if (typeof job.mimeType !== "string" || !job.mimeType.trim()) {
+  if (
+    typeof job.mimeType !== "string" ||
+    !job.mimeType.trim()
+  ) {
     throw new Error("Invalid mimeType");
   }
 
+  if (!leaseToken.trim()) {
+    throw new Error("Invalid lease token");
+  }
+
   if (job.mimeType.startsWith("image/")) {
-    await processImage(job);
+    await processImage(job, leaseToken);
     return;
   }
 
   if (job.mimeType.startsWith("video/")) {
-    await processVideo(job);
+    await processVideo(job, leaseToken);
     return;
   }
 

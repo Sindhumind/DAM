@@ -1,4 +1,3 @@
-
 import amqp, { ConfirmChannel, ChannelModel } from "amqplib";
 import dotenv from "dotenv";
 
@@ -23,12 +22,10 @@ export const connectRabbitMQ = async (): Promise<ConfirmChannel> => {
   connection = await amqp.connect(RABBITMQ_URL);
   channel = await connection.createConfirmChannel();
 
-  // Main queue: failed jobs can be routed to the retry queue.
   await channel.assertQueue(QUEUE_NAME, {
     durable: true,
   });
 
-  // Retry queue: messages return to the main queue after a delay.
   await channel.assertQueue(RETRY_QUEUE_NAME, {
     durable: true,
     arguments: {
@@ -38,7 +35,6 @@ export const connectRabbitMQ = async (): Promise<ConfirmChannel> => {
     },
   });
 
-  // Terminal queue: jobs that exhaust retries are kept for inspection.
   await channel.assertQueue(DEAD_LETTER_QUEUE_NAME, {
     durable: true,
   });
@@ -56,4 +52,14 @@ export const getRabbitMQChannel = (): ConfirmChannel => {
   }
 
   return channel;
+};
+
+export const closeRabbitMQ = async (): Promise<void> => {
+  if (channel) {
+    await channel.close().catch(() => {});
+  }
+
+  if (connection) {
+    await connection.close().catch(() => {});
+  }
 };

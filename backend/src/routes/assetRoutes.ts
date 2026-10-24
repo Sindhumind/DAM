@@ -9,17 +9,14 @@ import { deleteAsset } from "../controllers/assetDeleteController";
 import { updateMetadata } from "../controllers/assetMetadataController";
 import { getAssets } from "../controllers/assetListController";
 import { uploadAsset } from "../controllers/assetUploadController";
-
-import {
-  updateStatus,
-  claimForProcessing,
-} from "../controllers/assetController";
-
+import { retryFailedAsset } from "../controllers/assetController";
 import { downloadAsset } from "../controllers/assetDownloadController";
 import {
   authenticateToken,
   requireAdmin,
 } from "../middleware/authMiddleware";
+
+import { validateUploadedFiles } from "../middleware/validateUploadedFiles";
 
 const router = Router();
 
@@ -29,8 +26,13 @@ router.use(authenticateToken);
 // Dashboard statistics
 router.get("/stats", getDashboardStats);
 
-// Upload assets
-router.post("/upload", upload.array("files", 10), uploadAsset);
+// Upload assets with file signature validation
+router.post(
+  "/upload",
+  upload.array("files", 10),
+  validateUploadedFiles,
+  uploadAsset,
+);
 
 // Retrieve assets
 router.get("/", getAssets);
@@ -48,9 +50,7 @@ router.get("/:id/preview", getAssetPreview);
 // Download an asset
 router.get("/:id/download", downloadAsset);
 
-// Temporary admin-only protection for processing endpoints.
-// We'll move these to dedicated worker authentication next.
-router.patch("/:id/status", requireAdmin, updateStatus);
-router.post("/:id/claim", requireAdmin, claimForProcessing);
+// Retry a failed asset (admin only)
+router.post("/:id/retry", requireAdmin, retryFailedAsset);
 
 export default router;

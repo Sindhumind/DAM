@@ -1,4 +1,3 @@
-
 import {
   getRabbitMQChannel,
   QUEUE_NAME,
@@ -17,11 +16,12 @@ export const publishAssetProcessingJob = async (asset: {
     mimeType: asset.mimeType,
   };
 
-  channel.sendToQueue(
+   channel.sendToQueue(
     QUEUE_NAME,
     Buffer.from(JSON.stringify(job)),
     {
       persistent: true,
+      contentType: "application/json",
     }
   );
 
