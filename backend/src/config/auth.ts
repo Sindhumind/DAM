@@ -1,0 +1,2 @@
+export const TOKEN_EXPIRY_SECONDS = 60 * 60; // 1 hour (3600s)
+export const TOKEN_COOKIE_MAX_AGE_MS = TOKEN_EXPIRY_SECONDS * 1000; // 3,600,000ms

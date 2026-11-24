@@ -1,4 +1,3 @@
-
 import { Router } from "express";
 import upload from "../middleware/uploadMiddleware";
 
@@ -15,6 +14,10 @@ import {
   authenticateToken,
   requireAdmin,
 } from "../middleware/authMiddleware";
+import {
+  uploadRateLimit,
+  searchRateLimit,
+} from "../middleware/loginRateLimit";
 
 import { validateUploadedFiles } from "../middleware/validateUploadedFiles";
 
@@ -26,16 +29,17 @@ router.use(authenticateToken);
 // Dashboard statistics
 router.get("/stats", getDashboardStats);
 
-// Upload assets with file signature validation
+// Upload assets with rate limiting and file signature validation
 router.post(
   "/upload",
+  uploadRateLimit,
   upload.array("files", 10),
   validateUploadedFiles,
   uploadAsset,
 );
 
-// Retrieve assets
-router.get("/", getAssets);
+// Retrieve assets with search/list rate limiting
+router.get("/", searchRateLimit, getAssets);
 
 // Update asset metadata
 router.patch("/:id/metadata", updateMetadata);

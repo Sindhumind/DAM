@@ -1,4 +1,3 @@
-
 FROM node:22-alpine AS build
 
 WORKDIR /app
@@ -18,11 +17,19 @@ WORKDIR /app
 
 ENV NODE_ENV=production
 
-COPY package*.json ./
-RUN npm ci --omit=dev
+# Copy dependency manifests with node user ownership
+COPY --chown=node:node package*.json ./
+RUN npm ci --omit=dev && npm cache clean --force
 
-COPY --from=build /app/dist ./dist
-COPY --from=build /app/migrations ./migrations
+# Copy compiled artifacts and migrations with node user ownership
+COPY --from=build --chown=node:node /app/dist ./dist
+COPY --from=build --chown=node:node /app/migrations ./migrations
+
+# Ensure temporary upload directory exists and is writable by the non-root user
+RUN mkdir -p /app/uploads && chown -R node:node /app
+
+# Switch from root to the built-in unprivileged node user
+USER node
 
 EXPOSE 3000
 

@@ -1,16 +1,10 @@
-
 import fs from "fs/promises";
-import minioClient, {
-  bucketName,
-  ensureBucketExists,
-} from "../config/minio";
+import minioClient, { bucketName } from "../config/minio";
 
 export const saveFile = async (file: Express.Multer.File) => {
   const storageKey = `originals/${file.filename}`;
 
   try {
-    await ensureBucketExists();
-
     const result = await minioClient.fPutObject(
       bucketName,
       storageKey,

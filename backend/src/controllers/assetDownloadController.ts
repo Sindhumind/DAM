@@ -1,6 +1,5 @@
-
 import type { Response, NextFunction } from "express";
-import { getAssetById } from "../repositories/assetRepository";
+import { getAssetByIdForAccess } from "../repositories/assetRepository";
 import type { AuthenticatedRequest } from "../middleware/authMiddleware";
 import minioClient, { bucketName } from "../config/minio";
 
@@ -22,8 +21,12 @@ export async function downloadAsset(
       return;
     }
 
-    // Any authenticated user can download any asset.
-    const asset = await getAssetById(id);
+      const access = {
+      userId: req.user.id,
+      role: req.user.role,
+    };
+
+    const asset = await getAssetByIdForAccess(id, access);
 
     if (!asset) {
       res.status(404).json({ message: "Asset not found" });
@@ -40,6 +43,18 @@ export async function downloadAsset(
       asset.storage_key
     );
 
+     const etag = `"${stat.etag}"`;
+
+    if (req.headers["if-none-match"] === etag) {
+      res.setHeader("ETag", etag);
+      res.setHeader(
+        "Cache-Control",
+        "private, max-age=86400, stale-while-revalidate=3600"
+      );
+      res.status(304).end();
+      return;
+    }
+
     const filename = String(
       asset.original_filename || `asset-${id}`
     ).replace(/[\r\n"]/g, "_");
@@ -53,8 +68,12 @@ export async function downloadAsset(
       `attachment; filename="${filename}"`
     );
     res.setHeader("Content-Length", stat.size);
+    res.setHeader("ETag", etag);
+    res.setHeader(
+      "Cache-Control",
+      "private, max-age=86400, stale-while-revalidate=3600",
+    );
     res.setHeader("X-Content-Type-Options", "nosniff");
-    res.setHeader("Cache-Control", "private, no-store");
 
     const stream = await minioClient.getObject(
       bucketName,

@@ -1,6 +1,6 @@
 import { redisClient } from "../config/redis";
 
-const ASSET_LIST_CACHE_KEY = "assets:all";
+const ASSET_LIST_VERSION_KEY = "assets:list:version";
 const DASHBOARD_STATS_CACHE_KEY = "dashboard:stats";
 
 export interface AssetAccess {
@@ -8,15 +8,28 @@ export interface AssetAccess {
   role: "admin" | "user";
 }
 
+export const getAssetListCacheVersion = async (): Promise<string> => {
+  try {
+    if (redisClient.isReady) {
+      const version = await redisClient.get(ASSET_LIST_VERSION_KEY);
+      return version || "1";
+    }
+  } catch (error) {
+    console.error("Failed to read asset list cache version:", error);
+  }
+  return "1";
+};
+
 export const invalidateAssetListCache = async (): Promise<void> => {
   try {
     if (redisClient.isReady) {
-      await redisClient.del([
-        ASSET_LIST_CACHE_KEY,
-        DASHBOARD_STATS_CACHE_KEY,
+      // Incrementing the version key invalidates all paginated/filtered list keys atomically
+      await Promise.all([
+        redisClient.incr(ASSET_LIST_VERSION_KEY),
+        redisClient.del(DASHBOARD_STATS_CACHE_KEY),
       ]);
 
-      console.log("Asset list and dashboard caches invalidated");
+      console.log("Asset list version incremented and dashboard cache invalidated");
     }
   } catch (error) {
     console.error("Failed to invalidate Redis cache:", error);

@@ -1,6 +1,5 @@
-
 import type { Response } from "express";
-import { getAssetById } from "../repositories/assetRepository";
+import { getAssetByIdForAccess } from "../repositories/assetRepository";
 import type { AuthenticatedRequest } from "../middleware/authMiddleware";
 import minioClient, { bucketName } from "../config/minio";
 
@@ -23,8 +22,12 @@ export const getAssetPreview = async (
       });
     }
 
-    // All authenticated users can preview any asset.
-    const asset = await getAssetById(assetId);
+    const access = {
+      userId: req.user.id,
+      role: req.user.role,
+    };
+
+    const asset = await getAssetByIdForAccess(assetId, access);
 
     if (!asset) {
       return res.status(404).json({
@@ -45,6 +48,18 @@ export const getAssetPreview = async (
       });
     }
 
+      const stat = await minioClient.statObject(bucketName, objectKey);
+      const etag = `"${stat.etag}"`;
+
+    if (req.headers["if-none-match"] === etag) {
+      res.setHeader("ETag", etag);
+      res.setHeader(
+        "Cache-Control",
+        "private, max-age=86400, stale-while-revalidate=3600"
+      );
+      return res.status(304).end();
+    }
+
     const contentType =
       typeof thumbnailKey === "string" && thumbnailKey.length > 0
         ? "image/jpeg"
@@ -56,8 +71,13 @@ export const getAssetPreview = async (
     );
 
     res.setHeader("Content-Type", contentType);
-    res.setHeader("Cache-Control", "private, no-store");
+    res.setHeader("ETag", etag);
+    res.setHeader(
+      "Cache-Control",
+      "private, max-age=86400, stale-while-revalidate=3600",
+    );
     res.setHeader("X-Content-Type-Options", "nosniff");
+
 
     stream.on("error", (error) => {
       console.error("Asset preview stream error:", error);

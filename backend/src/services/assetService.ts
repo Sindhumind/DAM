@@ -58,41 +58,30 @@ export const deleteAssetService = async (
     return false;
   }
 
-  const deleted = await deleteAsset(assetId, access);
-
-  if (!deleted) {
-    return false;
-  }
-
   const thumbnailKey = asset.metadata?.thumbnailKey;
 
   try {
-    if (
-      typeof thumbnailKey === "string" &&
-      thumbnailKey.length > 0
-    ) {
+    if (typeof thumbnailKey === "string" && thumbnailKey.length > 0) {
       await minioClient.removeObject(bucketName, thumbnailKey);
     }
 
     if (asset.storage_key) {
-      await minioClient.removeObject(
-        bucketName,
-        asset.storage_key,
-      );
+      await minioClient.removeObject(bucketName, asset.storage_key);
     }
   } catch (error) {
     console.error(
-      "Asset deleted from database, but MinIO cleanup failed:",
+      "MinIO object removal failed; aborting database deletion:",
       error,
     );
 
-    throw new Error(
-      "Asset record deleted, but file cleanup failed",
-    );
+    throw new Error("Failed to delete asset files from storage");
   }
 
-  return true;
+  const deleted = await deleteAsset(assetId, access);
+
+  return Boolean(deleted);
 };
+
 
 type WorkerResultStatus = Exclude<
   AssetProcessingStatus,

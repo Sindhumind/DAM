@@ -1,7 +1,7 @@
-
 import type { Request, Response, NextFunction } from "express";
 import { loginUser } from "../services/authService";
 import type { AuthenticatedRequest } from "../middleware/authMiddleware";
+import { TOKEN_COOKIE_MAX_AGE_MS } from "../config/auth";
 
 const COOKIE_NAME = "accessToken";
 
@@ -45,7 +45,7 @@ export async function login(
     // JavaScript running in the browser cannot read this cookie.
     res.cookie(COOKIE_NAME, result.token, {
       ...cookieOptions,
-      maxAge: 60 * 60 * 1000, // 1 hour
+       maxAge: TOKEN_COOKIE_MAX_AGE_MS, // 1 hour
     });
 
     res.status(200).json({

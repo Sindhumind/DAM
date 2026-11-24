@@ -13,6 +13,7 @@ import workerRoutes from "./routes/workerRoutes";
 
 import { connectRabbitMQ, closeRabbitMQ } from "./config/rabbitmq";
 import { redisClient } from "./config/redis";
+import { ensureBucketExists } from "./services/storageService";
 
 dotenv.config();
 
@@ -205,6 +206,11 @@ const startServer = async (): Promise<void> => {
     await connectRabbitMQ();
 
     console.log("RabbitMQ initialization complete");
+    console.log("Verifying MinIO bucket...");
+
+    await ensureBucketExists();
+
+    console.log("MinIO bucket verified");
 
     httpServer = app.listen(PORT, () => {
       console.log(`DAM API running on port ${PORT}`);

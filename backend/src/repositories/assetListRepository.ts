@@ -1,10 +1,13 @@
 import pool from "../config/db";
-import { validateAccess, type AssetAccess } from "./assetRepositoryUtils";
+import { redisClient } from "../config/redis";
+import {
+  getAssetListCacheVersion,
+  validateAccess,
+  type AssetAccess,
+} from "./assetRepositoryUtils";
 
-/**
- * Returns paginated assets with filename search and media-type filtering.
- * All authenticated users can view all assets.
- */
+const ASSET_LIST_TTL_SECONDS = 30;
+
 export const getAllAssets = async (
   page: number = 1,
   limit: number = 8,
@@ -27,56 +30,73 @@ export const getAllAssets = async (
     throw new Error("Invalid pagination parameters");
   }
 
-  const offset = (page - 1) * limit;
-  const searchTerm = `%${search.trim()}%`;
+  const trimmedSearch = search.trim();
+  const version = await getAssetListCacheVersion();
+  const cacheKey = `assets:list:v${version}:p${page}:l${limit}:f${filter}:s${encodeURIComponent(trimmedSearch.toLowerCase())}`;
 
+  // 1. Return cached paginated response if available
+  try {
+    if (redisClient.isReady) {
+      const cached = await redisClient.get(cacheKey);
+      if (cached) {
+        return JSON.parse(cached);
+      }
+    }
+  } catch (error) {
+    console.error("Asset list Redis read failed:", error);
+  }
+
+  const offset = (page - 1) * limit;
+  const hasSearch = trimmedSearch.length > 0;
+  const searchTerm = `%${trimmedSearch}%`;
+
+  // 2. Single query with COUNT(*) OVER() window function
   const result = await pool.query(
     `
-    SELECT *
+    SELECT
+      *,
+      COUNT(*) OVER()::int AS total_count
     FROM assets
     WHERE
       (
-        COALESCE(NULLIF(metadata->>'title', ''), original_filename)
-          ILIKE $1
-        OR original_filename ILIKE $1
+        $1::boolean = false
+        OR metadata->>'title' ILIKE $2
+        OR original_filename ILIKE $2
       )
       AND (
-        $2 = 'all'
-        OR ($2 = 'image' AND mime_type LIKE 'image/%')
-        OR ($2 = 'video' AND mime_type LIKE 'video/%')
+        $3 = 'all'
+        OR ($3 = 'image' AND mime_type LIKE 'image/%')
+        OR ($3 = 'video' AND mime_type LIKE 'video/%')
       )
     ORDER BY created_at DESC, id DESC
-    LIMIT $3 OFFSET $4
+    LIMIT $4 OFFSET $5
     `,
-    [searchTerm, filter, limit, offset],
+    [hasSearch, searchTerm, filter, limit, offset],
   );
 
-  const countResult = await pool.query(
-    `
-    SELECT COUNT(*)::int AS total
-    FROM assets
-    WHERE
-      (
-        COALESCE(NULLIF(metadata->>'title', ''), original_filename)
-          ILIKE $1
-        OR original_filename ILIKE $1
-      )
-      AND (
-        $2 = 'all'
-        OR ($2 = 'image' AND mime_type LIKE 'image/%')
-        OR ($2 = 'video' AND mime_type LIKE 'video/%')
-      )
-    `,
-    [searchTerm, filter],
-  );
+  const total =
+    result.rows.length > 0 ? Number(result.rows[0].total_count) : 0;
 
-  const total = Number(countResult.rows[0].total);
+  const assets = result.rows.map(({ total_count: _totalCount, ...asset }) => asset);
 
-  return {
-    assets: result.rows,
+  const response = {
+    assets,
     total,
     page,
     limit,
     totalPages: Math.ceil(total / limit),
   };
+
+  // 3. Store result in Redis with short TTL
+  try {
+    if (redisClient.isReady) {
+      await redisClient.set(cacheKey, JSON.stringify(response), {
+        EX: ASSET_LIST_TTL_SECONDS,
+      });
+    }
+  } catch (error) {
+    console.error("Asset list Redis write failed:", error);
+  }
+
+  return response;
 };

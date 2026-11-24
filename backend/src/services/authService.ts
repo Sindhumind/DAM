@@ -1,7 +1,7 @@
-
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import pool from "../config/db";
+import { TOKEN_EXPIRY_SECONDS } from "../config/auth";
 
 export interface AuthUser {
   id: number;
@@ -46,7 +46,7 @@ export async function loginUser(
     role: row.role,
   };
 
-  const token = jwt.sign(
+    const token = jwt.sign(
     {
       email: user.email,
       role: user.role,
@@ -54,7 +54,7 @@ export async function loginUser(
     secret,
     {
       subject: String(user.id),
-      expiresIn: "30m",
+      expiresIn: TOKEN_EXPIRY_SECONDS,
     }
   );
 
