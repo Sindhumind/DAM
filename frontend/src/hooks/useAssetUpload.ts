@@ -3,6 +3,8 @@ import { validateFile } from "../utils/fileValidation";
 import { uploadAsset } from "../services/assetService";
 import type { UploadMetadata } from "../components/assets/UploadMetadataForm";
 
+const MAX_FILES_PER_BATCH = 10;
+
 const emptyMetadata: UploadMetadata = {
   title: "",
   description: "",
@@ -19,33 +21,59 @@ export default function useAssetUpload({
   onUploadComplete,
   onClose,
 }: UseAssetUploadOptions) {
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [metadata, setMetadata] = useState<UploadMetadata>(emptyMetadata);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState("");
   const [isDragging, setIsDragging] = useState(false);
 
-  const selectFile = (file?: File) => {
+  const selectFiles = (incoming: File[] | FileList | null | undefined) => {
     setUploadError("");
 
-    if (!file) {
-      setSelectedFile(null);
-      return;
+    if (!incoming || incoming.length === 0) return;
+
+    const incomingArray = Array.from(incoming);
+    const validFiles: File[] = [];
+
+    for (const file of incomingArray) {
+      const error = validateFile(file);
+      if (error) {
+        setUploadError(`${file.name}: ${error}`);
+        return;
+      }
+      validFiles.push(file);
     }
 
-    const error = validateFile(file);
+    setSelectedFiles((previous) => {
+      const existingKeys = new Set(
+        previous.map((f) => `${f.name}-${f.size}-${f.lastModified}`),
+      );
+      const uniqueNew = validFiles.filter(
+        (f) => !existingKeys.has(`${f.name}-${f.size}-${f.lastModified}`),
+      );
+      const combined = [...previous, ...uniqueNew];
 
-    if (error) {
-      setSelectedFile(null);
-      setUploadError(error);
-      return;
-    }
+      if (combined.length > MAX_FILES_PER_BATCH) {
+        setUploadError(
+          `You can upload up to ${MAX_FILES_PER_BATCH} files at once.`,
+        );
+        return combined.slice(0, MAX_FILES_PER_BATCH);
+      }
 
-    setSelectedFile(file);
-    setMetadata((previous) => ({
-      ...previous,
-      title: previous.title || file.name.replace(/\.[^/.]+$/, ""),
-    }));
+      if (combined.length > 0) {
+        setMetadata((prevMeta) => ({
+          ...prevMeta,
+          title: prevMeta.title || combined.name.replace(/\.[^/.]+$/, ""),
+        }));
+      }
+
+      return combined;
+    });
+  };
+
+  const removeFile = (index: number) => {
+    setUploadError("");
+    setSelectedFiles((previous) => previous.filter((_, idx) => idx !== index));
   };
 
   const updateMetadata = (field: keyof UploadMetadata, value: string) => {
@@ -57,7 +85,7 @@ export default function useAssetUpload({
   };
 
   const handleUpload = async () => {
-    if (!selectedFile || uploading) return;
+    if (selectedFiles.length === 0 || uploading) return;
 
     const tags = metadata.tags
       .split(",")
@@ -89,7 +117,7 @@ export default function useAssetUpload({
     setUploadError("");
 
     try {
-      await uploadAsset(selectedFile, {
+      await uploadAsset(selectedFiles, {
         title: metadata.title.trim(),
         description: metadata.description.trim(),
         category: metadata.category.trim(),
@@ -105,15 +133,15 @@ export default function useAssetUpload({
   };
 
   return {
-    selectedFile,
-    setSelectedFile,
+    selectedFiles,
+    removeFile,
     metadata,
     uploading,
     uploadError,
     setUploadError,
     isDragging,
     setIsDragging,
-    selectFile,
+    selectFiles,
     updateMetadata,
     closeModal,
     handleUpload,

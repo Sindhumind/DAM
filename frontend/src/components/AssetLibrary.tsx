@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Upload } from "lucide-react";
 import Button from "./common/Button";
 import AssetUploader from "./assets/AssetUploader";
@@ -9,6 +10,27 @@ import AssetPreview from "./assets/AssetPreview";
 import DeleteAssetModal from "./assets/AssetDeleteModal";
 import AssetMetadataEditor from "./assets/AssetMetadataEditor";
 import useAssetLibrary from "../hooks/useAssetLibrary";
+import type { Asset } from "../types/asset";
+
+function getStatusTransitions(prevAssets: Asset[], nextAssets: Asset[]): string[] {
+  const prevMap = new Map(prevAssets.map((a) => [a.id, a.status]));
+  const transitions: string[] = [];
+
+  for (const asset of nextAssets) {
+    const prevStatus = prevMap.get(asset.id);
+    if (prevStatus && prevStatus !== asset.status) {
+      if (asset.status === "READY") {
+        transitions.push(`${asset.original_filename} finished processing and is ready.`);
+      } else if (asset.status === "FAILED") {
+        transitions.push(`${asset.original_filename} failed processing.`);
+      } else {
+        transitions.push(`${asset.original_filename} status changed to ${asset.status}.`);
+      }
+    }
+  }
+
+  return transitions;
+}
 
 export default function AssetLibrary() {
   const {
@@ -16,11 +38,13 @@ export default function AssetLibrary() {
     loading,
     error,
     page,
+    limit,
     total,
     totalPages,
     search,
     filter,
     setPage,
+    setLimit,
     setSearch,
     setFilter,
     refreshAssets,
@@ -41,6 +65,17 @@ export default function AssetLibrary() {
     getVideoUrl,
     handleDelete,
   } = useAssetLibrary();
+
+  const [statusMessage, setStatusMessage] = useState("");
+  const [prevAssets, setPrevAssets] = useState<Asset[]>(assets);
+
+  if (assets !== prevAssets) {
+    const transitions = getStatusTransitions(prevAssets, assets);
+    setPrevAssets(assets);
+    if (transitions.length > 0) {
+      setStatusMessage(transitions.join(" "));
+    }
+  }
 
   return (
     <section className="space-y-5">
@@ -76,9 +111,30 @@ export default function AssetLibrary() {
         </div>
       )}
 
-      <p className="text-sm text-slate-500">
-        Showing {assets.length} assets on this page. Page {page} of{" "}
-        {Math.max(totalPages, 1)} · {total} matching assets
+      {statusMessage && (
+        <div
+          role="status"
+          aria-live="polite"
+          className="flex items-center justify-between rounded-lg border border-indigo-200 bg-indigo-50 px-4 py-2.5 text-sm text-indigo-800"
+        >
+          <span>{statusMessage}</span>
+          <button
+            type="button"
+            onClick={() => setStatusMessage("")}
+            className="ml-4 text-xs font-medium text-indigo-600 hover:underline"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
+
+      <p aria-live="polite" className="text-sm text-slate-500">
+        {loading
+          ? "Loading assets..."
+          : `Showing ${assets.length} assets on this page. Page ${page} of ${Math.max(
+            totalPages,
+            1,
+          )} · ${total} matching assets`}
       </p>
 
       <AssetResults
@@ -101,12 +157,17 @@ export default function AssetLibrary() {
         currentPage={page}
         totalPages={totalPages}
         onPageChange={setPage}
+        pageSize={limit}
+        onPageSizeChange={setLimit}
       />
 
       {isUploadOpen && (
         <AssetUploader
           onClose={() => setIsUploadOpen(false)}
-          onUploadComplete={refreshAssets}
+          onUploadComplete={async () => {
+            await refreshAssets();
+            setStatusMessage("Assets uploaded and queued for processing.");
+          }}
         />
       )}
 
@@ -128,8 +189,10 @@ export default function AssetLibrary() {
         }}
         onConfirm={async () => {
           if (assetToDelete) {
+            const deletedName = assetToDelete.original_filename;
             await handleDelete(assetToDelete);
             setAssetToDelete(null);
+            setStatusMessage(`Deleted ${deletedName}.`);
           }
         }}
       />
@@ -139,7 +202,10 @@ export default function AssetLibrary() {
           key={assetToEdit.id}
           asset={assetToEdit}
           onClose={() => setAssetToEdit(null)}
-          onSaved={() => void refreshAssets()}
+          onSaved={async () => {
+            await refreshAssets();
+            setStatusMessage(`Updated metadata for ${assetToEdit.original_filename}.`);
+          }}
         />
       )}
     </section>

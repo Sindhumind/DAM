@@ -1,9 +1,8 @@
-
 import { useCallback, useEffect, useState } from "react";
 import { getAssets } from "../services/assetService";
 import type { Asset, AssetFilter } from "../types/asset";
 
-const PAGE_SIZE = 8;
+const DEFAULT_PAGE_SIZE = 8;
 
 interface UseAssetsResult {
   assets: Asset[];
@@ -16,6 +15,7 @@ interface UseAssetsResult {
   search: string;
   filter: AssetFilter;
   setPage: (page: number) => void;
+  setLimit: (limit: number) => void;
   setSearch: (search: string) => void;
   setFilter: (filter: AssetFilter) => void;
   refreshAssets: () => Promise<void>;
@@ -26,6 +26,7 @@ export default function useAssets(): UseAssetsResult {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [page, setCurrentPage] = useState(1);
+  const [limit, setLimitValue] = useState(DEFAULT_PAGE_SIZE);
   const [total, setTotal] = useState(0);
   const [totalPages, setTotalPages] = useState(0);
   const [search, setSearchValue] = useState("");
@@ -34,6 +35,11 @@ export default function useAssets(): UseAssetsResult {
 
   const setPage = useCallback((nextPage: number) => {
     setCurrentPage(Math.max(1, nextPage));
+  }, []);
+
+  const setLimit = useCallback((nextLimit: number) => {
+    setLimitValue(Math.max(1, nextLimit));
+    setCurrentPage(1);
   }, []);
 
   const setSearch = useCallback((value: string) => {
@@ -58,11 +64,9 @@ export default function useAssets(): UseAssetsResult {
       setError("");
 
       try {
-        // getAssets sends credentials: "include".
-        // The browser supplies the HttpOnly cookie automatically.
         const result = await getAssets({
           page,
-          limit: PAGE_SIZE,
+          limit,
           search,
           filter,
         });
@@ -75,9 +79,7 @@ export default function useAssets(): UseAssetsResult {
       } catch (err) {
         if (!cancelled) {
           setError(
-            err instanceof Error
-              ? err.message
-              : "Unable to load assets.",
+            err instanceof Error ? err.message : "Unable to load assets.",
           );
         }
       } finally {
@@ -92,19 +94,20 @@ export default function useAssets(): UseAssetsResult {
     return () => {
       cancelled = true;
     };
-  }, [page, search, filter, reloadKey]);
+  }, [page, limit, search, filter, reloadKey]);
 
   return {
     assets,
     loading,
     error,
     page,
-    limit: PAGE_SIZE,
+    limit,
     total,
     totalPages,
     search,
     filter,
     setPage,
+    setLimit,
     setSearch,
     setFilter,
     refreshAssets,

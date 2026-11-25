@@ -6,9 +6,8 @@ import { ACCEPTED_FILE_EXTENSIONS } from "../../utils/fileValidation";
 interface UploadDropzoneProps {
   uploading: boolean;
   isDragging: boolean;
-  onSelect: (file?: File) => void;
+  onSelect: (files: File[]) => void;
   onDraggingChange: (dragging: boolean) => void;
-  onError: (message: string) => void;
 }
 
 export default function UploadDropzone({
@@ -16,7 +15,6 @@ export default function UploadDropzone({
   isDragging,
   onSelect,
   onDraggingChange,
-  onError,
 }: UploadDropzoneProps) {
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -25,10 +23,14 @@ export default function UploadDropzone({
       <input
         ref={inputRef}
         type="file"
+        multiple
         accept={ACCEPTED_FILE_EXTENSIONS}
         disabled={uploading}
         onChange={(event) => {
-          onSelect(event.currentTarget.files?.[0]);
+          const files = Array.from(event.currentTarget.files ?? []);
+          if (files.length > 0) {
+            onSelect(files);
+          }
           event.currentTarget.value = "";
         }}
         className="hidden"
@@ -55,29 +57,25 @@ export default function UploadDropzone({
           if (uploading) return;
 
           const files = Array.from(event.dataTransfer.files);
-
-          if (files.length > 1) {
-            onError("Please select only one file at a time.");
-          } else {
-            onSelect(files[0]);
+          if (files.length > 0) {
+            onSelect(files);
           }
         }}
-        className={`rounded-xl border-2 border-dashed p-5 text-center transition-colors ${
-          isDragging
+        className={`rounded-xl border-2 border-dashed p-5 text-center transition-colors ${isDragging
             ? "border-indigo-500 bg-indigo-50"
             : "border-slate-300 bg-slate-50 hover:border-indigo-300"
-        }`}
+          }`}
       >
         <Upload size={30} className="mx-auto text-indigo-500" />
 
         <p className="mt-2 text-sm font-semibold text-slate-800">
           {isDragging
-            ? "Drop your file here"
-            : "Drag and drop a file here"}
+            ? "Drop your files here"
+            : "Drag and drop files here"}
         </p>
 
         <p className="mt-1 text-xs text-slate-500">
-          JPG, PNG, WEBP, MP4, MOV, WEBM · One file · Max 500 MB
+          JPG, PNG, WEBP, MP4, MOV, WEBM · Up to 10 files · Max 500 MB each
         </p>
 
         <Button

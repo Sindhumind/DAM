@@ -1,4 +1,3 @@
-
 import { logout } from "./authService";
 
 export const API_BASE_URL =
@@ -8,18 +7,39 @@ export const REQUEST_OPTIONS = {
   credentials: "include" as const,
 };
 
-export async function handleResponse<T>(
-  response: Response,
-): Promise<T> {
-  if (response.status === 401) {
-    void logout().catch(() => {
-      // Local session data is cleared by logout even if the request fails.
-    });
+type UnauthorizedHandler = () => void;
 
-    window.location.reload();
+let onUnauthorized: UnauthorizedHandler | null = null;
+let isHandlingUnauthorized = false;
+
+export function setUnauthorizedHandler(
+  handler: UnauthorizedHandler | null,
+): void {
+  onUnauthorized = handler;
+}
+
+export async function handleResponse<T>(response: Response): Promise<T> {
+  if (response.status === 401) {
+    const isLoginRequest = response.url.endsWith("/api/auth/login");
+
+    if (!isLoginRequest && !isHandlingUnauthorized) {
+      isHandlingUnauthorized = true;
+
+      void logout()
+        .catch(() => {
+          // Local session data is cleared by logout even if the request fails.
+        })
+        .finally(() => {
+          isHandlingUnauthorized = false;
+        });
+
+      onUnauthorized?.();
+    }
 
     throw new Error(
-      "Your session has expired. Please sign in again.",
+      isLoginRequest
+        ? "Invalid email or password."
+        : "Your session has expired. Please sign in again.",
     );
   }
 
@@ -27,8 +47,7 @@ export async function handleResponse<T>(
     let message = `Request failed (${response.status}).`;
 
     try {
-      const contentType =
-        response.headers.get("content-type") || "";
+      const contentType = response.headers.get("content-type") || "";
 
       if (contentType.includes("application/json")) {
         const result = await response.json();
@@ -45,13 +64,10 @@ export async function handleResponse<T>(
     return undefined as T;
   }
 
-  const contentType =
-    response.headers.get("content-type") || "";
+  const contentType = response.headers.get("content-type") || "";
 
   if (!contentType.includes("application/json")) {
-    throw new Error(
-      "The server returned an unexpected response.",
-    );
+    throw new Error("The server returned an unexpected response.");
   }
 
   return (await response.json()) as T;

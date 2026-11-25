@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { Search, SlidersHorizontal } from "lucide-react";
 import type { AssetFilter } from "../../types/asset";
 
@@ -14,16 +15,35 @@ const filters: { label: string; value: AssetFilter }[] = [
   { label: "Videos", value: "video" },
 ];
 
+const SEARCH_DEBOUNCE_MS = 300;
+
 export default function AssetFilters({
   searchValue,
   onSearchChange,
   activeFilter,
   onFilterChange,
 }: AssetFiltersProps) {
+  const [inputValue, setInputValue] = useState(searchValue);
+
+  useEffect(() => {
+    setInputValue(searchValue);
+  }, [searchValue]);
+
+  useEffect(() => {
+    if (inputValue === searchValue) return;
+
+    const timer = window.setTimeout(() => {
+      onSearchChange(inputValue);
+    }, SEARCH_DEBOUNCE_MS);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [inputValue, searchValue, onSearchChange]);
+
   return (
     <div className="flex flex-col gap-4 rounded-xl border border-slate-200 bg-white p-4 sm:flex-row sm:items-center sm:justify-between">
       <div className="w-full sm:max-w-sm">
-
         <div className="relative">
           <Search
             size={17}
@@ -34,9 +54,10 @@ export default function AssetFilters({
           <input
             id="asset-search"
             type="search"
+            aria-label="Search assets by filename"
             placeholder="Search by filename..."
-            value={searchValue}
-            onChange={(event) => onSearchChange(event.target.value)}
+            value={inputValue}
+            onChange={(event) => setInputValue(event.target.value)}
             className="w-full rounded-lg border border-slate-200 bg-white py-2.5 pl-10 pr-3 text-sm text-slate-800 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
           />
         </div>
@@ -57,11 +78,10 @@ export default function AssetFilters({
               type="button"
               aria-pressed={isActive}
               onClick={() => onFilterChange(filter.value)}
-              className={`rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
-                isActive
+              className={`rounded-lg px-3 py-2 text-sm font-medium transition-colors ${isActive
                   ? "bg-indigo-600 text-white"
                   : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-              }`}
+                }`}
             >
               {filter.label}
             </button>

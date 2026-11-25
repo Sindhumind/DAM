@@ -64,27 +64,28 @@ export interface UploadAssetMetadata {
 }
 
 export async function uploadAsset(
-  file: File,
+  files: File[],
   metadata?: UploadAssetMetadata,
 ): Promise<unknown> {
   const formData = new FormData();
-  formData.append("files", file);
+
+  for (const file of files) {
+    formData.append("files", file);
+  }
 
   if (metadata) {
     formData.append("metadata", JSON.stringify(metadata));
   }
 
-  const response = await fetch(
-    `${API_BASE_URL}/api/assets/upload`,
-    {
-      method: "POST",
-      ...REQUEST_OPTIONS,
-      body: formData,
-    },
-  );
+  const response = await fetch(`${API_BASE_URL}/api/assets/upload`, {
+    method: "POST",
+    ...REQUEST_OPTIONS,
+    body: formData,
+  });
 
   return handleResponse<unknown>(response);
 }
+
 
 export async function getAssetStats(): Promise<AssetStats> {
   const response = await fetch(

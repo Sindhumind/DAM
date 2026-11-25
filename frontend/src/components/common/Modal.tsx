@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { X } from "lucide-react";
 
@@ -18,6 +18,15 @@ const sizeStyles = {
   xl: "max-w-4xl",
 };
 
+const FOCUSABLE_SELECTOR = [
+  'a[href]',
+  'button:not([disabled])',
+  'input:not([disabled]):not([type="hidden"])',
+  'select:not([disabled])',
+  'textarea:not([disabled])',
+  '[tabindex]:not([tabindex="-1"])',
+].join(", ");
+
 export default function Modal({
   isOpen,
   onClose,
@@ -25,11 +34,61 @@ export default function Modal({
   children,
   size = "md",
 }: ModalProps) {
+  const dialogRef = useRef<HTMLElement | null>(null);
+  const previousActiveElementRef = useRef<HTMLElement | null>(null);
+
   useEffect(() => {
     if (!isOpen) return;
 
+    previousActiveElementRef.current =
+      document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null;
+
+    const dialogEl = dialogRef.current;
+
+    if (dialogEl) {
+      const focusable = Array.from(
+        dialogEl.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR),
+      );
+      if (focusable.length > 0) {
+        focusable[0].focus();
+      } else {
+        dialogEl.focus();
+      }
+    }
+
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
+      if (event.key === "Escape") {
+        onClose();
+        return;
+      }
+
+      if (event.key !== "Tab" || !dialogRef.current) return;
+
+      const focusable = Array.from(
+        dialogRef.current.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR),
+      ).filter((el) => el.offsetParent !== null);
+
+      if (focusable.length === 0) {
+        event.preventDefault();
+        dialogRef.current.focus();
+        return;
+      }
+
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      const active = document.activeElement;
+
+      if (event.shiftKey) {
+        if (active === first || !dialogRef.current.contains(active)) {
+          event.preventDefault();
+          last.focus();
+        }
+      } else if (active === last || !dialogRef.current.contains(active)) {
+        event.preventDefault();
+        first.focus();
+      }
     };
 
     const previousOverflow = document.body.style.overflow;
@@ -39,6 +98,10 @@ export default function Modal({
     return () => {
       document.body.style.overflow = previousOverflow;
       document.removeEventListener("keydown", handleKeyDown);
+
+      if (previousActiveElementRef.current?.isConnected) {
+        previousActiveElementRef.current.focus();
+      }
     };
   }, [isOpen, onClose]);
 
@@ -52,10 +115,12 @@ export default function Modal({
       }}
     >
       <section
+        ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-label={title}
-        className={`w-full ${sizeStyles[size]} max-h-[90vh] overflow-y-auto rounded-xl bg-white shadow-2xl`}
+        tabIndex={-1}
+        className={`w-full ${sizeStyles[size]} max-h-[90vh] overflow-y-auto rounded-xl bg-white shadow-2xl outline-none`}
       >
         <header className="sticky top-0 flex items-center justify-between gap-4 border-b border-slate-200 bg-white px-5 py-4">
           <h2 className="truncate text-lg font-semibold text-slate-900">

@@ -1,4 +1,4 @@
-import { X } from "lucide-react";
+import Modal from "../common/Modal";
 import UploadDropzone from "./UploadDropzone";
 import UploadMetadataForm from "./UploadMetadataForm";
 import SelectedUploadFile from "./SelectedUploadFile";
@@ -15,93 +15,73 @@ export default function AssetUploader({
   onClose,
 }: AssetUploaderProps) {
   const {
-    selectedFile,
-    setSelectedFile,
+    selectedFiles,
+    removeFile,
     metadata,
     uploading,
     uploadError,
-    setUploadError,
     isDragging,
     setIsDragging,
-    selectFile,
+    selectFiles,
     updateMetadata,
     closeModal,
     handleUpload,
   } = useAssetUpload({ onUploadComplete, onClose });
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
-      onMouseDown={(event) => {
-        if (event.target === event.currentTarget && !uploading) {
-          closeModal();
-        }
+    <Modal
+      isOpen
+      onClose={() => {
+        if (!uploading) closeModal();
       }}
+      title="Upload assets"
+      size="lg"
     >
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="upload-modal-title"
-        className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-2xl bg-white p-5 shadow-xl sm:p-6"
-      >
-        <div className="mb-5 flex items-start justify-between gap-4">
-          <div>
-            <h2 id="upload-modal-title" className="text-xl font-semibold text-slate-900">
-              Upload asset
-            </h2>
-            <p className="mt-1 text-sm text-slate-500">
-              Select a file and add metadata before uploading.
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={closeModal}
-            disabled={uploading}
-            aria-label="Close upload modal"
-            className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 disabled:opacity-50"
-          >
-            <X size={20} />
-          </button>
+      <p className="mb-4 text-sm text-slate-500">
+        Select up to 10 files and add metadata before uploading.
+      </p>
+
+      <UploadDropzone
+        uploading={uploading}
+        isDragging={isDragging}
+        onSelect={selectFiles}
+        onDraggingChange={setIsDragging}
+      />
+
+      {selectedFiles.length > 0 && (
+        <div className="mt-3 space-y-2">
+          {selectedFiles.map((file, index) => (
+            <SelectedUploadFile
+              key={`${file.name}-${file.size}-${file.lastModified}`}
+              file={file}
+              uploading={uploading}
+              onRemove={() => removeFile(index)}
+            />
+          ))}
         </div>
+      )}
 
-        <UploadDropzone
-          uploading={uploading}
-          isDragging={isDragging}
-          onSelect={selectFile}
-          onDraggingChange={setIsDragging}
-          onError={setUploadError}
-        />
+      <UploadMetadataForm
+        metadata={metadata}
+        uploading={uploading}
+        onChange={updateMetadata}
+      />
 
-        {selectedFile && (
-          <SelectedUploadFile
-            file={selectedFile}
-            uploading={uploading}
-            onRemove={() => setSelectedFile(null)}
-          />
-        )}
+      {uploadError && (
+        <p
+          role="alert"
+          className="mt-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700"
+        >
+          {uploadError}
+        </p>
+      )}
 
-        <UploadMetadataForm
-          metadata={metadata}
-          uploading={uploading}
-          onChange={updateMetadata}
-        />
-
-        {uploadError && (
-          <p
-            role="alert"
-            className="mt-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700"
-          >
-            {uploadError}
-          </p>
-        )}
-
-        <UploadModalFooter
-          uploading={uploading}
-          hasFile={Boolean(selectedFile)}
-          onCancel={closeModal}
-          onUpload={() => void handleUpload()}
-        />
-      </div>
-    </div>
+      <UploadModalFooter
+        uploading={uploading}
+        hasFile={selectedFiles.length > 0}
+        onCancel={closeModal}
+        onUpload={() => void handleUpload()}
+      />
+    </Modal>
   );
 }

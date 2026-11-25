@@ -1,6 +1,6 @@
-
 import { useCallback, useEffect, useState } from "react";
 import { getCurrentUser, logout, type User } from "../services/authService";
+import { setUnauthorizedHandler } from "../services/apiResponse";
 
 const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL || "http://localhost:3000";
@@ -30,6 +30,19 @@ export default function useAppSession(onAuthenticated: () => void) {
 
     if (currentUser) onAuthenticated();
   }, [onAuthenticated]);
+
+    useEffect(() => {
+      setUnauthorizedHandler(() => {
+        localStorage.removeItem("user");
+        setUser(null);
+        setError("Your session has expired. Please sign in again.");
+      });
+
+      return () => {
+        setUnauthorizedHandler(null);
+      };
+    }, []);
+
 
   useEffect(() => {
     let cancelled = false;

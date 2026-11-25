@@ -29,7 +29,8 @@
     "multer": "^2.4.0",
     "pg": "^8.23.1",
     "rate-limit-redis": "^6.0.2",
-    "redis": "^6.3.0"
+    "redis": "^6.3.0",
+    "swagger-ui-express": "^5.0.1"
   },
   "devDependencies": {
     "@types/amqplib": "^0.10.8",
@@ -42,6 +43,7 @@
     "@types/multer": "^2.3.0",
     "@types/node": "^26.6.4",
     "@types/pg": "^8.23.1",
+    "@types/swagger-ui-express": "^4.1.8",
     "ts-node": "^10.9.2",
     "tsx": "^4.23.15",
     "typescript": "^5.9.3",

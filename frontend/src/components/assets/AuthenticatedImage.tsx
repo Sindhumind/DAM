@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
 interface AuthenticatedImageProps {
   src: string;
@@ -6,81 +6,18 @@ interface AuthenticatedImageProps {
   className?: string;
 }
 
-type ImageState = {
-  src: string;
-  objectUrl: string | null;
-  failed: boolean;
-};
-
 export default function AuthenticatedImage({
   src,
   alt,
   className = "",
 }: AuthenticatedImageProps) {
-  const [imageState, setImageState] = useState<ImageState>({
-    src: "",
-    objectUrl: null,
-    failed: false,
-  });
+  const [failedSrc, setFailedSrc] = useState<string | null>(null);
+  const [loadedSrc, setLoadedSrc] = useState<string | null>(null);
 
-  useEffect(() => {
-    let cancelled = false;
-    let createdUrl: string | null = null;
+  const failed = failedSrc === src;
+  const loaded = loadedSrc === src;
 
-    const loadImage = async () => {
-      try {
-        const response = await fetch(src, {
-          credentials: "include",
-        });
-
-        if (!response.ok) {
-          throw new Error(`Image request failed (${response.status})`);
-        }
-
-        const blob = await response.blob();
-
-        if (!blob.type.startsWith("image/")) {
-          throw new Error("The server did not return an image.");
-        }
-
-        createdUrl = URL.createObjectURL(blob);
-
-        if (!cancelled) {
-          setImageState({
-            src,
-            objectUrl: createdUrl,
-            failed: false,
-          });
-        } else {
-          URL.revokeObjectURL(createdUrl);
-        }
-      } catch (error) {
-        console.error("Failed to load asset preview:", error);
-
-        if (!cancelled) {
-          setImageState({
-            src,
-            objectUrl: null,
-            failed: true,
-          });
-        }
-      }
-    };
-
-    void loadImage();
-
-    return () => {
-      cancelled = true;
-
-      if (createdUrl) {
-        URL.revokeObjectURL(createdUrl);
-      }
-    };
-  }, [src]);
-
-  const currentState = imageState.src === src ? imageState : null;
-
-  if (currentState?.failed) {
+  if (failed) {
     return (
       <div
         role="img"
@@ -92,20 +29,23 @@ export default function AuthenticatedImage({
     );
   }
 
-  if (!currentState?.objectUrl) {
-    return (
-      <div
-        aria-label={`Loading ${alt}`}
-        className={`animate-pulse bg-slate-100 ${className}`}
-      />
-    );
-  }
-
   return (
-    <img
-      src={currentState.objectUrl}
-      alt={alt}
-      className={className}
-    />
+    <>
+      {!loaded && (
+        <div
+          aria-label={`Loading ${alt}`}
+          className={`animate-pulse bg-slate-100 ${className}`}
+        />
+      )}
+      <img
+        src={src}
+        alt={alt}
+        crossOrigin="use-credentials"
+        loading="lazy"
+        onLoad={() => setLoadedSrc(src)}
+        onError={() => setFailedSrc(src)}
+        className={`${className} ${loaded ? "" : "hidden"}`}
+      />
+    </>
   );
 }
