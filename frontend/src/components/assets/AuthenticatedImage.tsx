@@ -30,22 +30,22 @@ export default function AuthenticatedImage({
   }
 
   return (
-    <>
+    <div className="relative h-full w-full">
       {!loaded && (
         <div
           aria-label={`Loading ${alt}`}
-          className={`animate-pulse bg-slate-100 ${className}`}
+          className={`absolute inset-0 animate-pulse bg-slate-100 ${className}`}
         />
       )}
       <img
         src={src}
         alt={alt}
         crossOrigin="use-credentials"
-        loading="lazy"
         onLoad={() => setLoadedSrc(src)}
         onError={() => setFailedSrc(src)}
-        className={`${className} ${loaded ? "" : "hidden"}`}
+        className={`${className} transition-opacity duration-200 ${loaded ? "opacity-100" : "opacity-0"
+          }`}
       />
-    </>
+    </div>
   );
 }

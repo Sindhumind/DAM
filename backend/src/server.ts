@@ -5,11 +5,13 @@ import dotenv from "dotenv";
 import multer from "multer";
 import type { Server } from "http";
 import helmet from "helmet";
+import swaggerUi from "swagger-ui-express";
 
 import pool from "./config/db";
 import assetRoutes from "./routes/assetRoutes";
 import authRoutes from "./routes/authRoutes";
 import workerRoutes from "./routes/workerRoutes";
+import { openApiSpec } from "./config/swagger";
 
 import { connectRabbitMQ, closeRabbitMQ } from "./config/rabbitmq";
 import { redisClient } from "./config/redis";
@@ -18,11 +20,33 @@ import { ensureBucketExists } from "./services/storageService";
 dotenv.config();
 
 const app = express();
-app.use(helmet());
-const frontendUrl =
-  process.env.FRONTEND_URL || "http://localhost:5173";
+app.use(
+  helmet({
+    crossOriginResourcePolicy: { policy: "cross-origin" },
+    contentSecurityPolicy: {
+      directives: {
+        ...helmet.contentSecurityPolicy.getDefaultDirectives(),
+        "img-src": [
+          "'self'",
+          "data:",
+          "blob:",
+          "http://localhost:3000",
+          "http://localhost:9000",
+        ],
+      },
+    },
+  }),
+);
 
-const trustedOrigins = new Set([frontendUrl]);
+
+const PORT = process.env.PORT || 3000;
+const frontendUrl = process.env.FRONTEND_URL || "http://localhost:5173";
+
+const trustedOrigins = new Set([
+  frontendUrl,
+  `http://localhost:${PORT}`,
+  `http://127.0.0.1:${PORT}`,
+]);
 
 app.use(
   cors({
@@ -39,12 +63,7 @@ app.use("/internal/worker/assets", workerRoutes);
 
 // CSRF protection for browser state-changing requests.
 app.use((req, res, next) => {
-  const stateChangingMethods = new Set([
-    "POST",
-    "PUT",
-    "PATCH",
-    "DELETE",
-  ]);
+  const stateChangingMethods = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 
   if (!stateChangingMethods.has(req.method)) {
     return next();
@@ -60,6 +79,20 @@ app.use((req, res, next) => {
 
   next();
 });
+
+// OpenAPI / Swagger documentation.
+app.get("/api-docs.json", (_req, res) => {
+  res.json(openApiSpec);
+});
+
+app.use(
+  "/api-docs",
+  helmet({ contentSecurityPolicy: false }),
+  swaggerUi.serve,
+  swaggerUi.setup(openApiSpec, {
+    customSiteTitle: "DAM API Documentation",
+  }),
+);
 
 // Health check.
 app.get("/health", async (_req, res) => {
@@ -83,9 +116,7 @@ app.get("/health", async (_req, res) => {
   }
 
   const status =
-    database === "connected" && redis === "connected"
-      ? "ok"
-      : "error";
+    database === "connected" && redis === "connected" ? "ok" : "error";
 
   res.status(status === "ok" ? 200 : 503).json({
     status,
@@ -109,8 +140,7 @@ app.use(
     if (error instanceof multer.MulterError) {
       if (error.code === "LIMIT_FILE_SIZE") {
         return res.status(413).json({
-          message:
-            "File is too large. Maximum file size is 500 MB.",
+          message: "File is too large. Maximum file size is 500 MB.",
         });
       }
 
@@ -139,21 +169,15 @@ app.use(
     console.error("Unhandled API error:", error.message);
 
     return res.status(500).json({
-      message:
-        "An unexpected server error occurred. Please try again later.",
+      message: "An unexpected server error occurred. Please try again later.",
     });
   },
 );
 
-const PORT = process.env.PORT || 3000;
-
 let httpServer: Server | undefined;
 let isShuttingDown = false;
 
-const shutdown = async (
-  reason: string,
-  exitCode = 0,
-): Promise<void> => {
+const shutdown = async (reason: string, exitCode = 0): Promise<void> => {
   if (isShuttingDown) return;
   isShuttingDown = true;
 

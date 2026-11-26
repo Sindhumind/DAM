@@ -1,306 +1,200 @@
-# DAM --- Digital Asset Management
+# DAM — Digital Asset Management
 
-A web-based Digital Asset Management (DAM) application for uploading,
-organizing, viewing, and processing digital assets. The project uses a
-React/TypeScript frontend, a Node.js/Express backend, and a background
-worker with supporting infrastructure services.
-
-> **Project status:** The assignment code has been pushed to GitHub.
-> Validate the current build, Docker configuration, and end-to-end
-> workflows before treating the application as production-ready.
+A full-stack Digital Asset Management (DAM) application for uploading, organizing, searching, previewing, and asynchronously processing image and video assets. Built with a React 19 + TypeScript frontend, a Node.js + Express + TypeScript REST API, and a background media-processing worker backed by PostgreSQL, MinIO, RabbitMQ, and Redis.
 
 ## Repository
 
--   GitHub: https://github.com/Sindhumind/DAM
--   Main branch: `main`
+* **GitHub:** https://github.com/Sindhumind/DAM
+* **Main branch:** `main`
+
+---
+
+## Architecture Overview
+
+```text
++-------------------------------------------------------------------------+
+
+|                           Browser (User / Admin)                        |
+|               React 19 + TypeScript + Tailwind CSS (Port 8080)          |
++------------------------------------+------------------------------------+
+                                     | HTTPS / HTTP (HttpOnly JWT Cookie)
+                                     v
++-------------------------------------------------------------------------+
+
+|                        Backend API (Node.js / Express)                  |
+|   - Auth & RBAC Ownership Checks      - Swagger UI (/api-docs)          |
+|   - Magic-Byte File Validation        - Redis-Backed Rate Limiting      |
++--------+---------------------+---------------------+--------------------+
+
+         |                     |                     |
+         v                     v                     v
++----------------+   +-------------------+   +----------------------------+
+
+| PostgreSQL 16  |   |     Redis 7       |   |         MinIO (S3)         |
+| Assets, Users, |   | Stats Cache &     |   | Originals & Thumbnails     |
+| JSONB & Trgm   |   | Rate-Limit Store  |   | (Ports 9000 / 9001)        |
++----------------+   +-------------------+   +-------------+--------------+
+         ^                                                 ^
+
+         | Lease & Metadata Updates                        | Read/Write Media
+         |           +-------------------+                 |
+         +-----------+   RabbitMQ 4      +-----------------+
+
+                     | Processing & DLQ  |
+                     | (Ports 5672/15672)|
+                     +---------+---------+
+                               |
+                               v
+                     +-------------------+
+
+                     | Background Worker |
+                     | FFmpeg & Sharp    |
+                     +-------------------+
+```
+
+---
 
 ## Technology Stack
 
--   **Frontend:** React, TypeScript, Vite
--   **Backend:** Node.js, Express, TypeScript
--   **Database:** PostgreSQL
--   **Object storage:** MinIO
--   **Message broker:** RabbitMQ
--   **Cache / queue-related support:** Redis
--   **Background processing:** Node.js/TypeScript worker
--   **Containerization:** Docker and Docker Compose
--   **Web server / reverse proxy:** Nginx (frontend container
-    configuration; validation is still required)
+* **Frontend:** React 19, TypeScript, Vite, Tailwind CSS, Lucide Icons
+* **Backend:** Node.js, Express 5, TypeScript, Swagger UI (`swagger-ui-express`)
+* **Database:** PostgreSQL 16 (JSONB metadata, `pg_trgm` trigram search indexes, transactional migrations)
+* **Object Storage:** MinIO (S3-compatible storage for originals and generated thumbnails)
+* **Message Broker:** RabbitMQ 4 (asynchronous job queue with retry and dead-letter routing)
+* **Cache & Throttling:** Redis 7 (dashboard stats cache + distributed rate limiting)
+* **Background Worker:** Node.js / TypeScript worker with distributed lease-token locking
+* **Containerization & CI:** Docker, Docker Compose, Nginx, GitHub Actions
 
-## Main Components
-
-### Frontend
-
-The frontend provides the user interface for authentication and
-asset-library workflows. The source includes components for asset cards,
-grid/list views, upload flows, previews, metadata editing, and dashboard
-statistics.
-
-### Backend API
-
-The Express API contains routes, controllers, repositories, and services
-for asset operations, authentication, user management, and
-worker-related operations.
-
-### Background worker
-
-The worker consumes asset-processing jobs from RabbitMQ and processes
-assets asynchronously. MinIO is used for object storage.
-
-### Infrastructure
-
-The current Compose setup includes these services:
-
-  Service    Purpose                            Default host port
-  ---------- ---------------------------------- -------------------
-  MinIO      Object storage and web console     `9000`, `9001`
-  RabbitMQ   Message broker and management UI   `5672`, `15672`
-  Redis      In-memory data store               `127.0.0.1:6379`
-
-PostgreSQL is used by the backend, but confirm its configuration and
-availability in your environment before starting the full application.
-The frontend Nginx configuration and full-stack Compose integration also
-need validation.
+---
 
 ## Prerequisites
 
-Install the following tools:
+* [Docker Desktop](https://docker.com) (with Docker Compose v2)
+* [Node.js 22+](https://nodejs.org) and `npm` (for local development and running tests outside Docker)
 
--   Git
--   Node.js and npm (Node.js 22 is used in the frontend Docker build)
--   Docker Desktop with Docker Compose
--   PostgreSQL, if it is not provided by your development environment
+---
 
-## Clone the Repository
+## Quick Start (Docker Compose — Recommended)
 
-``` bash
+The entire stack—including PostgreSQL, Redis, RabbitMQ, MinIO, Backend, Worker, and Frontend—is configured to run out of the box with Docker Compose.
+
+### 1. Clone the repository
+```bash
 git clone https://github.com/Sindhumind/DAM.git
 cd DAM
 ```
 
-## Environment Configuration
+### 2. Configure environment variables
+Copy the provided `.env.example` templates and replace placeholder passwords/secrets with strong values:
 
-Create local environment files as needed for the backend, worker, and
-root Docker Compose configuration. Use the variable names expected by
-the project code and Compose file.
-
-The root Compose configuration expects these variables in the root
-`.env` file:
-
-``` dotenv
-RABBITMQ_DEFAULT_USER=your_rabbitmq_user
-RABBITMQ_DEFAULT_PASS=replace_with_a_strong_password
-MINIO_ROOT_USER=your_minio_user
-MINIO_ROOT_PASSWORD=replace_with_a_strong_password
+```bash
+cp .env.example .env
+cp backend/.env.example backend/.env
+cp worker/.env.example worker/.env
 ```
 
-The backend also uses database connection settings:
+> **Security note:** Never commit `.env` files or real credentials to version control.
 
-``` dotenv
-DB_HOST=your_postgres_host
-DB_PORT=5432
-DB_USER=your_database_user
-DB_PASSWORD=replace_with_a_strong_password
-DB_NAME=your_database_name
-PORT=3000
+### 3. Build and start all services
+```bash
+docker compose up --build -d
 ```
 
-The backend and worker use a RabbitMQ connection URL. The backend also
-uses a Redis URL or defaults to `redis://127.0.0.1:6379` when running
-outside Docker. When running in Compose, use the service hostname (for
-example, `redis`) rather than `127.0.0.1` to reach another container.
-
-``` dotenv
-RABBITMQ_URL=amqp://your_rabbitmq_user:your_rabbitmq_password@rabbitmq:5672
-REDIS_URL=redis://redis:6379
-```
-
-**Security notes:**
-
--   Never commit `.env` files, real passwords, access tokens, or
-    production secrets.
--   Use strong, unique credentials and rotate any credentials that may
-    have been exposed.
--   Do not copy the example placeholder values into a production
-    environment.
--   Confirm all required environment variables in the source code before
-    deployment.
-
-## Run the Infrastructure Services
-
-From the repository root, start the currently configured infrastructure
-services:
-
-``` bash
-docker compose up -d minio rabbitmq redis
-```
-
-Check service status:
-
-``` bash
+Verify that all containers are running and healthy:
+```bash
 docker compose ps
 ```
 
-View logs for an individual service:
-
-``` bash
-docker compose logs -f minio
-docker compose logs -f rabbitmq
-docker compose logs -f redis
+### 4. Run database migrations
+Apply the PostgreSQL schema, foreign keys, and trigram search indexes:
+```bash
+docker compose exec backend npm run migrate
 ```
 
-The MinIO console is normally available at `http://localhost:9001`, and
-the RabbitMQ management UI is normally available at
-`http://localhost:15672`. Sign in with the credentials configured in
-your local `.env` file.
+### 5. Access the running services
 
-> Do not run `docker compose down -v` unless you deliberately intend to
-> remove named volumes and their stored data.
+| Service | URL | Notes |
+| :--- | :--- | :--- |
+| **Frontend Web App** | `http://localhost:8080` | Nginx serving the React production build |
+| **Backend Health Check** | `http://localhost:3000/health` | Verifies PostgreSQL and Redis connectivity |
+| **Swagger / OpenAPI Docs** | `http://localhost:3000/api-docs` | Interactive REST API explorer (`/api-docs.json` for raw spec) |
+| **MinIO Console** | `http://localhost:9001` | Object storage browser (sign in with `MINIO_ROOT_USER`) |
+| **RabbitMQ Management** | `http://localhost:15672` | Queue monitor (sign in with `RABBITMQ_DEFAULT_USER`) |
 
-## Backend
+> Do not run `docker compose down -v` unless you intend to delete the persistent named volumes (`postgres_data`, `minio_test_data`, `rabbitmq_data`, `redis_data`).
 
-Install dependencies:
+---
 
-``` bash
-cd backend
-npm ci
+## Local Development (Without Full Compose)
+
+The repository uses **npm workspaces** at the root (`backend`, `frontend`, `worker`).
+
+### Install dependencies
+```bash
+npm install
 ```
 
-Build the TypeScript backend:
+### Start infrastructure only
+```bash
+docker compose up -d postgres minio rabbitmq redis
+```
 
-``` bash
+### Run individual services
+* **Backend API (Port 3000):**
+  ```bash
+  cd backend
+  npm run migrate
+  npm run dev
+  ```
+* **Background Worker:**
+  ```bash
+  cd worker
+  npm run dev
+  ```
+* **Frontend Dev Server (Port 5173):**
+  ```bash
+  cd frontend
+  npm run dev
+  ```
+
+---
+
+## Testing & CI
+
+Automated unit and integration tests are implemented with **Vitest**, **Supertest**, and **React Testing Library** across all workspaces.
+
+Run all test suites from the repository root:
+```bash
+npm test
+```
+
+Build all workspaces:
+```bash
 npm run build
 ```
 
-Start the development server:
+A GitHub Actions workflow (`.github/workflows/ci.yml`) automatically runs linting, unit/integration tests, TypeScript/Vite builds, and Docker Compose image builds on every push and pull request to `main`.
 
-``` bash
-npm run dev
-```
+---
 
-The backend uses port `3000` by default. A health endpoint is configured
-at `/health`; it depends on the database and Redis connections, so a
-successful response requires those dependencies to be reachable.
+## API Documentation
 
-### Database migrations
+Interactive OpenAPI 3.0 documentation is served automatically by the backend at:
+* **Swagger UI:** `http://localhost:3000/api-docs`
+* **OpenAPI JSON Spec:** `http://localhost:3000/api-docs.json`
 
-The repository includes SQL migration files under `backend/migrations`.
-The backend package defines a migration script:
+Core endpoint groups include:
+* `GET /health` — Database and Redis health check
+* `POST /api/auth/login`, `POST /api/auth/logout`, `GET /api/auth/me` — HttpOnly cookie session authentication
+* `GET /api/assets`, `GET /api/assets/stats` — Paginated search/filtering and cached dashboard stats
+* `POST /api/assets/upload` — Multi-file batch upload (up to 10 files) with binary magic-byte validation
+* `GET /api/assets/:id/preview`, `GET /api/assets/:id/download` — Owner-authorized, ETag-cached streaming
+* `PATCH /api/assets/:id/metadata`, `DELETE /api/assets/:id` — Metadata updates and atomic storage + DB deletion
 
-``` bash
-npm run migrate
-```
-
-Run migrations only after confirming the database connection settings
-and reviewing the migrations for your environment.
-
-## Frontend
-
-Install dependencies:
-
-``` bash
-cd frontend
-npm ci
-```
-
-Build the frontend:
-
-``` bash
-npm run build
-```
-
-Run the Vite development server:
-
-``` bash
-npm run dev
-```
-
-The frontend Dockerfile builds the Vite application and copies the
-generated `dist` files into an Nginx image. **The current Nginx
-configuration has reported an `unknown directive "server"` error and
-must be fixed and validated before relying on the frontend container.**
-
-## Worker
-
-Install dependencies and build the worker:
-
-``` bash
-cd worker
-npm ci
-npm run build
-```
-
-The package defines a start command:
-
-``` bash
-npm start
-```
-
-Configure the worker with a valid `RABBITMQ_URL` and verify that the
-RabbitMQ service is reachable before starting it. Review the worker logs
-to confirm that it connects and processes jobs as expected.
-
-## Useful Validation Checklist
-
-Before presenting the project as complete, verify each item in your own
-environment:
-
--   [ ] Root `.env` and service-specific `.env` files are excluded from
-    Git.
--   [ ] Backend dependencies install successfully.
--   [ ] `npm run build` succeeds in `backend`.
--   [ ] `npm run build` succeeds in `frontend`.
--   [ ] `npm run build` succeeds in `worker`.
--   [ ] PostgreSQL is reachable and migrations complete successfully.
--   [ ] Backend health endpoint responds as expected.
--   [ ] Login and authentication flows work.
--   [ ] Asset upload, listing, preview, metadata editing, and download
-    work.
--   [ ] RabbitMQ jobs are consumed by the worker.
--   [ ] MinIO stores and serves the expected objects.
--   [ ] Redis connectivity works.
--   [ ] Nginx configuration passes `nginx -t`.
--   [ ] Docker Compose startup and service health are verified.
--   [ ] No credentials, tokens, or sensitive files are included in the
-    commit.
+---
 
 ## Troubleshooting
 
-### Backend health check fails
-
-Check the backend logs and verify PostgreSQL and Redis connection
-settings. Inside Docker, use service names as hosts rather than
-`localhost` or `127.0.0.1` for other containers.
-
-### Worker does not process jobs
-
-Verify `RABBITMQ_URL`, RabbitMQ credentials, queue names, and worker
-logs. Confirm the backend publishes jobs to the queues the worker
-consumes.
-
-### Nginx reports `unknown directive "server"`
-
-The `server` directive must be inside the Nginx `http` context. Inspect
-the active main configuration and the file included from
-`/etc/nginx/conf.d/`, then run `nginx -t` after correcting the
-configuration.
-
-### Docker data safety
-
-The project uses named volumes for MinIO, RabbitMQ, and Redis in the
-current Compose setup. Avoid deleting volumes during routine
-troubleshooting.
-
-## Development Notes
-
--   Work on a feature branch when making significant changes.
--   Review `git status` and `git diff` before committing.
--   Keep `.env` files and secrets out of version control.
--   Test changes locally before pushing to `main`.
--   Record known issues clearly rather than marking unverified features
-    as complete.
-
-## License
-
-No license information is specified in this README. Add a `LICENSE` file
-if you intend to publish the project under an open-source license.
+* **Backend health check fails:** Ensure PostgreSQL and Redis containers are healthy (`docker compose ps`) and verify `DB_HOST=postgres` and `REDIS_URL=redis://redis:6379` inside Docker.
+* **Worker does not process jobs:** Check `docker compose logs -f worker` and verify `RABBITMQ_URL` and `WORKER_API_TOKEN` match between `backend/.env` and `worker/.env`.
+* **Port conflicts:** Stop any local PostgreSQL, Redis, or Nginx processes occupying ports `3000`, `5672`, `6379`, `8080`, or `9000` before starting Docker Compose.

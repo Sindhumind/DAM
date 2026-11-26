@@ -31,7 +31,8 @@ export default function AssetPagination({
   onPageChange,
   pageSize,
   onPageSizeChange,
-  pageSizeOptions =,
+  pageSizeOptions = [10, 25, 50],
+
 }: AssetPaginationProps) {
   const showPageSizeSelector =
     typeof pageSize === "number" && typeof onPageSizeChange === "function";

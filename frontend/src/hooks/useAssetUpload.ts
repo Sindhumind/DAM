@@ -63,7 +63,7 @@ export default function useAssetUpload({
       if (combined.length > 0) {
         setMetadata((prevMeta) => ({
           ...prevMeta,
-          title: prevMeta.title || combined.name.replace(/\.[^/.]+$/, ""),
+          title: prevMeta.title || combined[0].name.replace(/\.[^/.]+$/, ""),
         }));
       }
 

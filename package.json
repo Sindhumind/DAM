@@ -1,0 +1,14 @@
+{
+  "name": "dam-platform",
+  "private": true,
+  "workspaces": [
+    "backend",
+    "frontend",
+    "worker"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces --if-present",
+    "test": "npm test --workspaces --if-present",
+    "lint": "npm run lint --workspaces --if-present"
+  }
+}

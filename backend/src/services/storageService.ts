@@ -1,6 +1,15 @@
 import fs from "fs/promises";
 import minioClient, { bucketName } from "../config/minio";
 
+export const ensureBucketExists = async (): Promise<void> => {
+  const exists = await minioClient.bucketExists(bucketName);
+
+  if (!exists) {
+    await minioClient.makeBucket(bucketName);
+    console.log(`Created MinIO bucket: ${bucketName}`);
+  }
+};
+
 export const saveFile = async (file: Express.Multer.File) => {
   const storageKey = `originals/${file.filename}`;
 
@@ -11,7 +20,7 @@ export const saveFile = async (file: Express.Multer.File) => {
       file.path,
       {
         "Content-Type": file.mimetype,
-      }
+      },
     );
 
     console.log("File uploaded to MinIO:", {
